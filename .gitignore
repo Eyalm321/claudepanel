@@ -5,6 +5,7 @@ frontend/node_modules/
 
 # Executables & Local Binaries
 *.exe
+*.exe~
 *.exe.local
 *.dll
 *.so
