@@ -111,11 +111,20 @@ Five distinct CRT-scanline-filtered themes, cycle on the fly:
 | 📟 **MATRIX** | Digital rain — sharp green characters, blinking caret synced to warning status |
 | 😈 **DRACULA** | Sleek dark mode — cyan labels, pastel pink progress |
 
-<!-- TODO: add per-theme screenshots to docs/themes/ then drop in a 5-cell table:
-| Claude | Fallout | Amber | Matrix | Dracula |
-|---|---|---|---|---|
-| ![](docs/themes/claude.png) | ![](docs/themes/fallout.png) | ![](docs/themes/amber.png) | ![](docs/themes/matrix.png) | ![](docs/themes/dracula.png) |
--->
+<p align="center"><strong>Claude</strong> &nbsp;·&nbsp; <em>terracotta + lavender, the default</em></p>
+<p align="center"><img src="docs/themes/claude.png" alt="Claude theme" /></p>
+
+<p align="center"><strong>Fallout</strong> &nbsp;·&nbsp; <em>Pip-Boy green with CRT scanlines</em></p>
+<p align="center"><img src="docs/themes/fallout.png" alt="Fallout theme" /></p>
+
+<p align="center"><strong>Amber</strong> &nbsp;·&nbsp; <em>DEC VT100 glowing amber</em></p>
+<p align="center"><img src="docs/themes/amber.png" alt="Amber theme" /></p>
+
+<p align="center"><strong>Matrix</strong> &nbsp;·&nbsp; <em>digital rain with dot dividers</em></p>
+<p align="center"><img src="docs/themes/matrix.png" alt="Matrix theme" /></p>
+
+<p align="center"><strong>Dracula</strong> &nbsp;·&nbsp; <em>dark mode with pastel pink progress</em></p>
+<p align="center"><img src="docs/themes/dracula.png" alt="Dracula theme" /></p>
 
 ### Typography & TUI glyphs
 
