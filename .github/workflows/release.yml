@@ -68,7 +68,11 @@ jobs:
       - name: Install NSIS
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: choco install nsis -y --no-progress
+        run: |
+          choco install nsis -y --no-progress
+          # Chocolatey's NSIS install doesn't add makensis to PATH for the
+          # next step's shell. Append it to GITHUB_PATH so Wails finds it.
+          "C:\Program Files (x86)\NSIS" | Out-File -Append -Encoding utf8 -FilePath $env:GITHUB_PATH
 
       - name: Build Windows installer
         if: matrix.os == 'windows-latest'
