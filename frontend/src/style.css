@@ -2,20 +2,24 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --green:       #39ff14;
-  --green-dim:   #1a8a00;
-  --green-dark:  #082800;
-  --orange:      #ff6600;
-  --bg:          #000000;
-  --glow:        0 0 5px #39ff14, 0 0 10px rgba(57,255,20,0.4);
-  --glow-dim:    0 0 3px rgba(57,255,20,0.3);
-  --font:        'Courier New', Courier, monospace;
-  --h:           28px;
+  /* Authentic Claude Code CLI Terminal Color Palette */
+  --bg:            #0b0c0e; /* Deep pitch black terminal background */
+  --text:          #f3f4f6; /* Crisp near-white terminal text */
+  --text-muted:    #6b7280; /* Cool gray for brackets, dividers, and labels */
+  
+  /* Claude Code Signature Accent Colors */
+  --clay:          #d77757; /* Signature custom orange value highlight */
+  --green:         #34d399; /* Vibrant mint green */
+  --red:           #f23959; /* Custom high usage warning red */
+  
+  /* Modern Terminal Typography */
+  --font:          'Cascadia Mono', 'Cascadia Code', 'Consolas', monospace;
+  --h:             28px;
 }
 
 html, body {
   width: 100%;
-  height: var(--h);
+  height: 100%;
   overflow: hidden;
   background: transparent;
   user-select: none;
@@ -27,94 +31,216 @@ html, body {
   display: flex;
   align-items: center;
   width: 100%;
-  height: var(--h);
+  height: 100%;
   background: var(--bg);
-  color: var(--green);
+  color: var(--text);
   font-family: var(--font);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  padding: 0 6px;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  padding: 0 8px;
   overflow: hidden;
-  border-bottom: 1px solid rgba(57,255,20,0.15);
+  border-bottom: 1px solid rgba(107, 114, 128, 0.15);
 }
 
-/* ── CRT scanlines ── */
 .scanlines {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 20;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0px, transparent 1px,
-    rgba(0,0,0,0.22) 1px, rgba(0,0,0,0.22) 2px
-  );
+  display: none;
 }
 
 /* ── Segments ── */
 .seg {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 0 5px;
   white-space: nowrap;
   height: 100%;
 }
 .seg--nodrag { --wails-draggable: no-drag; cursor: default; }
-.seg--brand  .brand { font-weight: bold; letter-spacing: 0.15em; text-shadow: var(--glow); }
+
+.val-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0; /* Eliminate any internal flex gap */
+  margin: 0;
+  padding: 0;
+}
+
+/* Claude Code Logo Only Style */
+.seg--brand {
+  padding: 0 6px 0 2px;
+}
+.seg--brand .invader {
+  width: 15px;
+  height: 11px;
+  fill: var(--clay);
+  flex-shrink: 0;
+  display: block;
+}
 
 .spacer { flex: 1; }
-.sep    { color: var(--green-dim); opacity: 0.40; padding: 0 1px; }
+.sep    { color: var(--text-muted); opacity: 0.4; padding: 0 5px; font-weight: normal; font-size: 8px; }
 
 /* ── Text classes ── */
-.bracket { color: var(--green-dim); }
-.lbl     { color: var(--green-dim); text-shadow: var(--glow-dim); }
-.val     { color: var(--green);     text-shadow: var(--glow); }
-.sub     { color: var(--green-dim); font-size: 10px; text-shadow: var(--glow-dim); }
+.bracket { color: var(--text-muted); }
+.lbl     { color: #c9cdd3; font-weight: bold; } /* Readable near-white labels matching CLI theme */
+.val     { color: var(--clay); font-weight: bold; } /* Solid flat clay text highlight */
+.sub     { color: #b1b9f9; font-size: 10px; margin-left: 2px; font-weight: bold; } /* Lavender plan badge */
 
 /* ── Arrow buttons ── */
 .arrow {
-  color: var(--green-dim);
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 0 1px;
-  transition: color 0.1s, text-shadow 0.1s;
+  padding: 0 2px;
+  transition: color 0.1s ease;
   line-height: 1;
+  font-size: 9px;
 }
-.arrow:hover { color: var(--green); text-shadow: var(--glow); }
+.arrow:hover { color: var(--clay); }
+
+/* ── Blinking Caret/Cursor ── */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor {
+  display: none;
+  animation: blink 1s step-end infinite;
+  color: var(--clay);
+  font-size: inherit; /* Use the exact font-size of the parent text */
+  margin: 0; /* Absolutely zero gap */
+  padding: 0;
+  vertical-align: baseline; /* Align perfectly with adjacent characters */
+  line-height: inherit;
+}
+
+/* Enable cursor only for retro/terminal themes */
+#bar.theme-fallout .cursor,
+#bar.theme-amber .cursor,
+#bar.theme-matrix .cursor {
+  display: inline-block;
+}
 
 /* ── Progress bar ── */
-.prog       { letter-spacing: -0.02em; }
-.prog-fill  { color: var(--green); text-shadow: var(--glow); }
-.prog-empty { color: var(--green-dark); }
+.prog       { letter-spacing: -0.01em; margin-left: 2px; display: inline-flex; align-items: center; }
+.prog-fill  { color: var(--clay); }
+.prog-empty { color: rgba(107, 114, 128, 0.45); } /* Subtle gray for progress bar empty dots */
 
 /* ── Status classes ── */
-#seg-status.busy    .val { color: var(--green);  text-shadow: var(--glow); }
-#seg-status.idle    .val { color: #aaee00;        text-shadow: 0 0 4px #aaee00; }
-#seg-status.offline .val { color: #3a3a3a;        text-shadow: none; }
-#seg-status.offline .cursor { opacity: 0.25; }
+#seg-status.busy    .val { color: #b1b9f9; } /* Idle/busy lavender color */
+#seg-status.idle    .val { color: #b1b9f9; } /* Idle/busy lavender color */
+#seg-status.offline .val { color: var(--text-muted); } /* Gray offline status */
 
-/* ── Warning: limit exceeded or >90% ── */
-#seg-msgs.warn .val,
-#seg-msgs.warn .prog-fill {
-  color: var(--orange);
-  text-shadow: 0 0 6px var(--orange), 0 0 12px rgba(255,102,0,0.4);
-  animation: flicker 2.5s infinite;
+/* ── Warning states ── */
+.warn-medium .val,
+.warn-medium .prog-fill,
+.warn-medium .cursor {
+  color: #eab308; /* Yellow warn for 85%+ */
+}
+.warn-high .val,
+.warn-high .prog-fill,
+.warn-high .cursor {
+  color: var(--red); /* Custom red #f23959 for 95%+ / limit exceeded */
 }
 
-/* ── Cursor blink ── */
-.cursor { display: inline-block; }
-.blink  { animation: blink-cur 1s step-end infinite; color: var(--green); text-shadow: var(--glow); }
+/* ─────────────────────────────────────────────────────────────────────────────
+   ── Themes ──
+   ───────────────────────────────────────────────────────────────────────────── */
 
-@keyframes blink-cur {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+/* 1. CLAUDE (Default variables are already in :root, but we make them explicit) */
+#bar.theme-claude {
+  --bg:            #0b0c0e;
+  --text:          #f3f4f6;
+  --text-muted:    #6b7280;
+  --clay:          #d77757;
+  --green:         #34d399;
+  --red:           #f23959;
 }
 
-@keyframes flicker {
-  0%,100% { opacity: 1; }
-  88%     { opacity: 1; }
-  90%     { opacity: 0.35; }
-  92%     { opacity: 1; }
-  96%     { opacity: 0.6; }
-  98%     { opacity: 1; }
+/* 2. FALLOUT - Iconic Pip-Boy Green Terminal */
+#bar.theme-fallout {
+  --bg:            #041204; /* Deep toxic terminal green-black */
+  --text:          #33ff33; /* Phosphor radioactive green */
+  --text-muted:    #145c14; /* Muted forest green */
+  --clay:          #33ff33; /* Pure phosphor green values */
+  --green:         #33ff33;
+  --red:           #ff3333; /* Radioactive warning red */
 }
+#bar.theme-fallout .lbl { color: var(--text-muted); }
+#bar.theme-fallout .sub { color: #88ff88; }
+#bar.theme-fallout .seg--brand .invader { fill: var(--text); filter: drop-shadow(0 0 2px var(--text)); }
+#bar.theme-fallout .arrow:hover { color: var(--text); }
+#bar.theme-fallout .prog-empty { color: rgba(51, 255, 51, 0.2); }
+#bar.theme-fallout #seg-status.busy .val,
+#bar.theme-fallout #seg-status.idle .val {
+  color: var(--text);
+}
+
+/* 3. AMBER - Retro DEC VT100 / Fallout NV Amber Terminal */
+#bar.theme-amber {
+  --bg:            #0f0700; /* Deep amber-black */
+  --text:          #ffb000; /* Phosphor amber */
+  --text-muted:    #754400; /* Dim amber */
+  --clay:          #ffb000;
+  --green:         #ffb000;
+  --red:           #ff3300;
+}
+#bar.theme-amber .lbl { color: var(--text-muted); }
+#bar.theme-amber .sub { color: #ffd077; }
+#bar.theme-amber .seg--brand .invader { fill: var(--text); filter: drop-shadow(0 0 2px var(--text)); }
+#bar.theme-amber .arrow:hover { color: var(--text); }
+#bar.theme-amber .prog-empty { color: rgba(255, 176, 0, 0.2); }
+#bar.theme-amber #seg-status.busy .val,
+#bar.theme-amber #seg-status.idle .val {
+  color: var(--text);
+}
+
+/* 4. MATRIX - Digital Rain */
+#bar.theme-matrix {
+  --bg:            #000000; /* Pure deep black */
+  --text:          #00ff00; /* Matrix bright green */
+  --text-muted:    #004400; /* Dark matrix green */
+  --clay:          #00ff00;
+  --green:         #00ff00;
+  --red:           #ff0000;
+}
+#bar.theme-matrix .lbl { color: var(--text-muted); }
+#bar.theme-matrix .sub { color: #88ff88; }
+#bar.theme-matrix .seg--brand .invader { fill: var(--text); }
+#bar.theme-matrix .arrow:hover { color: var(--text); }
+#bar.theme-matrix .prog-empty { color: rgba(0, 255, 0, 0.25); }
+#bar.theme-matrix #seg-status.busy .val,
+#bar.theme-matrix #seg-status.idle .val {
+  color: var(--text);
+}
+
+/* 5. DRACULA - Elegant Dark Theme */
+#bar.theme-dracula {
+  --bg:            #282a36; /* Dracula background */
+  --text:          #f8f8f2; /* Dracula foreground */
+  --text-muted:    #6272a4; /* Dracula comment/purple */
+  --clay:          #ff79c6; /* Dracula pink */
+  --green:         #50fa7b; /* Dracula green */
+  --red:           #ff5555; /* Dracula red */
+}
+#bar.theme-dracula .lbl { color: #8be9fd; } /* Dracula cyan labels */
+#bar.theme-dracula .sub { color: #bd93f9; } /* Dracula purple plan badge */
+#bar.theme-dracula .seg--brand .invader { fill: var(--clay); }
+#bar.theme-dracula .arrow:hover { color: #8be9fd; }
+
+/* ── CRT Phosphor Filter and Scanline effect for Retro Themes ── */
+#bar.theme-fallout::after,
+#bar.theme-amber::after,
+#bar.theme-matrix::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
+              linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.04));
+  background-size: 100% 3px, 3px 100%;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0.8;
+}
+

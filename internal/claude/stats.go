@@ -20,6 +20,8 @@ type BarData struct {
 	// Most recent day with data (stats-cache may lag several days)
 	LastDataLabel    string  `json:"lastDataLabel"` // "TODAY" or "5-21"
 	LastDataMsgs     int     `json:"lastDataMsgs"`
+	HourlyPercent    float64 `json:"hourlyPercent"`  // 0.0–1.0; negative if unavailable
+	HourlyResetIn    string  `json:"hourlyResetIn"`  // countdown to 5h reset
 	// Other metrics
 	ResetIn          string  `json:"resetIn"`
 	PrimaryModel     string  `json:"primaryModel"`
@@ -29,6 +31,7 @@ type BarData struct {
 }
 
 // ComputeBarData derives all display metrics from raw file data.
+// apiUsage may be nil if the live API fetch failed; local data is used as fallback.
 func ComputeBarData(
 	accountName string,
 	sc *StatsCache,
@@ -37,6 +40,7 @@ func ComputeBarData(
 	notifs *NotificationStates,
 	msgLimit int64,
 	billingResetDay int,
+	apiUsage *APIUsage,
 ) *BarData {
 	now := time.Now()
 	periodStart := billingPeriodStart(now, billingResetDay)
@@ -60,13 +64,18 @@ func ComputeBarData(
 		}
 	}
 
-	// Progress percent — only when a limit is configured
+	// Progress percent — prefer API value, fall back to local limit calc
 	var pct float64
-	if msgLimit > 0 {
+	var showPct bool
+	if apiUsage != nil && apiUsage.WeeklyPercent >= 0 {
+		pct = apiUsage.WeeklyPercent
+		showPct = true
+	} else if msgLimit > 0 {
 		pct = float64(periodMsgs) / float64(msgLimit)
 		if pct > 1.0 {
 			pct = 1.0
 		}
+		showPct = true
 	}
 
 	// Human-readable label for last-data date
@@ -84,14 +93,21 @@ func ComputeBarData(
 		}
 	}
 
-	nextReset := billingPeriodStart(now, billingResetDay).AddDate(0, 1, 0)
-	resetIn := formatDuration(nextReset.Sub(now))
+	var resetIn string
+	if apiUsage != nil && !apiUsage.ResetAt.IsZero() {
+		resetIn = formatDuration(apiUsage.ResetAt.Sub(now))
+	} else {
+		nextReset := billingPeriodStart(now, billingResetDay).AddDate(0, 1, 0)
+		resetIn = formatDuration(nextReset.Sub(now))
+	}
 
 	primaryModel := computePrimaryModel(sc, periodStartStr)
 	status := computeStatus(sessions)
 
 	limitExceeded := false
-	if notifs != nil && notifs.ExceedMaxLimit != nil {
+	if apiUsage != nil && apiUsage.LimitExceeded {
+		limitExceeded = true
+	} else if notifs != nil && notifs.ExceedMaxLimit != nil {
 		limitExceeded = notifs.ExceedMaxLimit.Triggered
 	}
 
@@ -100,14 +116,33 @@ func ComputeBarData(
 		subType = strings.ToUpper(creds.ClaudeAiOauth.SubscriptionType)
 	}
 
+	// PeriodMsgLimit: use 1 as sentinel when we have API-sourced percent (triggers bar display)
+	effectiveLimit := msgLimit
+	if showPct && effectiveLimit == 0 {
+		effectiveLimit = 1
+	}
+
+	hourlyPct := -1.0
+	hourlyResetIn := "---"
+	if apiUsage != nil {
+		if apiUsage.HourlyPercent >= 0 {
+			hourlyPct = apiUsage.HourlyPercent
+		}
+		if !apiUsage.HourlyResetAt.IsZero() {
+			hourlyResetIn = formatDuration(apiUsage.HourlyResetAt.Sub(now))
+		}
+	}
+
 	return &BarData{
 		AccountName:      accountName,
 		SubscriptionType: subType,
 		PeriodMessages:   periodMsgs,
 		PeriodPercent:    pct,
-		PeriodMsgLimit:   msgLimit,
+		PeriodMsgLimit:   effectiveLimit,
 		LastDataLabel:    lastDataLabel,
 		LastDataMsgs:     lastMsgs,
+		HourlyPercent:    hourlyPct,
+		HourlyResetIn:    hourlyResetIn,
 		ResetIn:          resetIn,
 		PrimaryModel:     primaryModel,
 		Status:           status,

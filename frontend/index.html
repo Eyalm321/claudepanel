@@ -12,10 +12,10 @@
 
     <!-- Brand -->
     <div class="seg seg--brand">
-      <span class="bracket">[</span><span class="brand">CLAUDE</span><span class="bracket">]</span>
+      <svg class="invader" viewBox="0 0 11 8"><path d="M2,0h1v1h-1z M8,0h1v1h-1z M3,1h1v1h-1z M7,1h1v1h-1z M2,2h7v1h-7z M1,3h2v1h-2z M4,3h1v1h-1z M6,3h1v1h-1z M8,3h2v1h-2z M0,4h11v1h-11z M0,5h1v1h-1z M2,5h7v1h-7z M10,5h1v1h-1z M0,6h1v1h-1z M2,6h1v1h-1z M8,6h1v1h-1z M10,6h1v1h-1z M3,7h2v1h-2z M6,7h2v1h-2z"/></svg>
     </div>
 
-    <div class="sep">│</div>
+    <div class="sep">·</div>
 
     <!-- Account cycler: ◀ MAIN [MAX] ▶ — click arrows to switch -->
     <div class="seg seg--nodrag" id="seg-acct" title="Click ◀ ▶ to switch account">
@@ -25,47 +25,50 @@
       <span class="arrow" id="btn-acct-next">▶</span>
     </div>
 
-    <div class="sep">│</div>
+    <div class="sep">·</div>
 
     <!-- Msgs this billing period -->
-    <div class="seg" id="seg-msgs">
-      <span class="lbl">MSGS:</span>
-      <span class="val" id="val-msgs">---</span>
-      <!-- progress bar only shown when limit is configured -->
-      <span class="prog" id="prog-wrap">
-        <span class="prog-fill" id="prog-fill"></span><span class="prog-empty" id="prog-empty"></span>
-      </span>
-    </div>
+    <div class="seg" id="seg-msgs"><span class="lbl">MSGS:</span><span class="val-wrap"><span class="val" id="val-msgs">---</span><span class="prog" id="prog-wrap"><span class="prog-fill" id="prog-fill"></span><span class="prog-empty" id="prog-empty"></span></span><span class="cursor">█</span></span></div>
 
-    <div class="sep">│</div>
+    <div class="sep">·</div>
 
-    <!-- Reset countdown -->
-    <div class="seg">
+    <!-- Reset countdown (weekly) -->
+    <div class="seg" id="seg-reset">
       <span class="lbl">RESET:</span>
       <span class="val" id="val-reset">---</span>
     </div>
 
-    <div class="sep">│</div>
+    <div class="sep" id="sep-hourly" style="display: none;">·</div>
+
+    <!-- 5-hour rolling usage -->
+    <div class="seg" id="seg-hourly" style="display: none;">
+      <span class="lbl">5H:</span>
+      <span class="val" id="val-hourly">---</span>
+      <span class="prog" id="prog-wrap-hourly">
+        <span class="prog-fill" id="prog-fill-hourly"></span><span class="prog-empty" id="prog-empty-hourly"></span>
+      </span>
+    </div>
+
+    <div class="sep" id="sep-hourly-reset" style="display: none;">·</div>
+
+    <!-- 5-hour reset countdown -->
+    <div class="seg" id="seg-hourly-reset" style="display: none;">
+      <span class="lbl">RESET:</span>
+      <span class="val" id="val-hourly-reset">---</span>
+    </div>
+
+    <div class="sep">·</div>
 
     <!-- Primary model -->
     <div class="seg">
       <span class="val" id="val-model">---</span>
     </div>
 
-    <div class="sep">│</div>
-
-    <!-- Last data point (stats-cache lags; shows most recent day) -->
-    <div class="seg" id="seg-last" title="Messages on the last computed day">
-      <span class="lbl" id="lbl-last">---:</span>
-      <span class="val" id="val-last">---</span>
-    </div>
-
-    <div class="sep">│</div>
+    <div class="sep">·</div>
 
     <!-- Session status -->
     <div class="seg" id="seg-status">
       <span class="val" id="val-status">OFFLINE</span>
-      <span class="cursor blink">▋</span>
     </div>
 
     <div class="spacer"></div>
@@ -76,6 +79,16 @@
       <span class="lbl">MON</span>
       <span class="val" id="val-mon">1</span>
       <span class="arrow" id="btn-mon-next">▶</span>
+    </div>
+
+    <div class="sep">·</div>
+
+    <!-- Theme cycler: ◀ THEME CLAUDE ▶ -->
+    <div class="seg seg--nodrag" id="seg-theme" title="Click ◀ ▶ to change theme">
+      <span class="arrow" id="btn-theme-prev">◀</span>
+      <span class="lbl">THEME</span>
+      <span class="val" id="val-theme">CLAUDE</span>
+      <span class="arrow" id="btn-theme-next">▶</span>
     </div>
 
   </div>

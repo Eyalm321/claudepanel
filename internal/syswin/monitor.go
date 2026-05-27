@@ -33,13 +33,15 @@ type monitorInfoEx struct {
 
 // MonitorInfo is the app-facing monitor descriptor.
 type MonitorInfo struct {
-	Index     int    `json:"index"`
-	Left      int32  `json:"left"`
-	Top       int32  `json:"top"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	IsPrimary bool   `json:"isPrimary"`
-	Name      string `json:"name"`
+	Index     int     `json:"index"`
+	Left      int32   `json:"left"`      // physical pixels
+	Top       int32   `json:"top"`       // physical pixels
+	Width     int     `json:"width"`     // logical pixels
+	Height    int     `json:"height"`    // logical pixels
+	PhysWidth int     `json:"physWidth"` // physical pixels (use for Win32 sizing calls)
+	DpiScale  float64 `json:"dpiScale"`  // e.g. 1.25 at 125%
+	IsPrimary bool    `json:"isPrimary"`
+	Name      string  `json:"name"`
 }
 
 var enumResults []MonitorInfo
@@ -65,6 +67,8 @@ func enumMonitorProc(hMonitor, _ uintptr, _ uintptr, _ uintptr) uintptr {
 		Top:       info.rcMonitor.Top,
 		Width:     int(float64(physW) / scale),
 		Height:    int(float64(physH) / scale),
+		PhysWidth: physW,
+		DpiScale:  scale,
 		IsPrimary: info.dwFlags&monitorinfofPrimary != 0,
 		Name:      syscall.UTF16ToString(info.szDevice[:]),
 	}

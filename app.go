@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"claudebar/internal/claude"
@@ -27,6 +28,14 @@ type App struct {
 }
 
 func NewApp() *App {
+	// Redirect log output to %APPDATA%\ClaudeBar\debug.log for crash diagnosis.
+	logPath := filepath.Join(config.AppDataDir(), "debug.log")
+	_ = os.MkdirAll(config.AppDataDir(), 0755)
+	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644); err == nil {
+		log.SetOutput(f)
+		log.SetFlags(log.Ldate | log.Ltime)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Printf("config load error: %v — using defaults", err)
@@ -115,22 +124,27 @@ func (a *App) GetBarData() (*claude.BarData, error) {
 	if len(a.cfg.Accounts) == 0 {
 		return nil, fmt.Errorf("no accounts configured")
 	}
-	idx := a.cfg.ActiveAccount
-	if idx >= len(a.cfg.Accounts) {
-		idx = 0
+
+	activeIdx := a.cfg.ActiveAccount
+	if activeIdx >= len(a.cfg.Accounts) {
+		activeIdx = 0
 	}
-	acc := a.cfg.Accounts[idx]
+
+	acc := a.cfg.Accounts[activeIdx]
 
 	sc, _ := claude.ReadStatsCache(acc.Path)
 	creds, _ := claude.ReadCredentials(acc.Path)
 	sessions := claude.ReadSessions(acc.Path)
 	notifs := claude.ReadNotifications(acc.Path)
 
+	apiUsage := claude.ReadUsage(acc.Path)
+
 	return claude.ComputeBarData(
 		acc.Name,
 		sc, creds, sessions, notifs,
 		a.cfg.WeeklyMsgLimit,
 		a.cfg.BillingResetDay,
+		apiUsage,
 	), nil
 }
 

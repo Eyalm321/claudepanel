@@ -8,6 +8,8 @@ export namespace claude {
 	    periodMsgLimit: number;
 	    lastDataLabel: string;
 	    lastDataMsgs: number;
+	    hourlyPercent: number;
+	    hourlyResetIn: string;
 	    resetIn: string;
 	    primaryModel: string;
 	    status: string;
@@ -27,6 +29,8 @@ export namespace claude {
 	        this.periodMsgLimit = source["periodMsgLimit"];
 	        this.lastDataLabel = source["lastDataLabel"];
 	        this.lastDataMsgs = source["lastDataMsgs"];
+	        this.hourlyPercent = source["hourlyPercent"];
+	        this.hourlyResetIn = source["hourlyResetIn"];
 	        this.resetIn = source["resetIn"];
 	        this.primaryModel = source["primaryModel"];
 	        this.status = source["status"];
@@ -132,6 +136,8 @@ export namespace syswin {
 	    top: number;
 	    width: number;
 	    height: number;
+	    physWidth: number;
+	    dpiScale: number;
 	    isPrimary: boolean;
 	    name: string;
 	
@@ -146,6 +152,8 @@ export namespace syswin {
 	        this.top = source["top"];
 	        this.width = source["width"];
 	        this.height = source["height"];
+	        this.physWidth = source["physWidth"];
+	        this.dpiScale = source["dpiScale"];
 	        this.isPrimary = source["isPrimary"];
 	        this.name = source["name"];
 	    }

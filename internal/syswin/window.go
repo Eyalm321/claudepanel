@@ -12,13 +12,14 @@ var (
 	procSetWindowLongPtrW          = user32.NewProc("SetWindowLongPtrW")
 	procGetWindowLongPtrW          = user32.NewProc("GetWindowLongPtrW")
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
+	procGetWindowRect              = user32.NewProc("GetWindowRect")
 	procEnumWindows                = user32.NewProc("EnumWindows")
 	procGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible            = user32.NewProc("IsWindowVisible")
 	procGetWindowTextW             = user32.NewProc("GetWindowTextW")
 
-	shell32           = syscall.NewLazyDLL("shell32.dll")
-	procSHAppBarMsg   = shell32.NewProc("SHAppBarMessage")
+	shell32         = syscall.NewLazyDLL("shell32.dll")
+	procSHAppBarMsg = shell32.NewProc("SHAppBarMessage")
 )
 
 const (
@@ -33,11 +34,12 @@ const (
 	wsExLayered     = uintptr(0x00080000)
 	wsExTransparent = uintptr(0x00000020)
 	hwndTopmost     = ^uintptr(0) // (HWND)(-1)
-	swpNoactivate   = uintptr(0x0010)
-	swpShowwindow   = uintptr(0x0040)
-	swpNosize       = uintptr(0x0001)
-	swpNomove       = uintptr(0x0002)
-	swpFramechanged = uintptr(0x0020)
+	swpNoactivate     = uintptr(0x0010)
+	swpShowwindow     = uintptr(0x0040)
+	swpNosize         = uintptr(0x0001)
+	swpNomove         = uintptr(0x0002)
+	swpFramechanged   = uintptr(0x0020)
+	swpNosendchanging = uintptr(0x0400) // bypass WM_WINDOWPOSCHANGING veto
 	lwaAlpha        = uintptr(0x2)
 
 	// AppBar constants
@@ -99,17 +101,21 @@ func ApplyBarStyles(hwnd uintptr) {
 // If appBarMode is true it also registers as a Windows AppBar so maximised
 // apps push below the bar instead of appearing underneath it.
 func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
-	if appBarMode {
-		registerAppBar(hwnd, mon, barHeight)
+	physW := mon.PhysWidth
+	if physW == 0 {
+		physW = mon.Width
 	}
+
+	if appBarMode {
+		registerAppBar(hwnd, mon, barHeight, physW)
+	}
+	// SWP_NOSENDCHANGING bypasses any WM_WINDOWPOSCHANGING handler that
+	// would otherwise veto our height change (Wails enforces MinHeight/MaxHeight).
 	procSetWindowPos.Call(
-		hwnd,
-		hwndTopmost,
-		uintptr(mon.Left),
-		uintptr(mon.Top),
-		uintptr(mon.Width),
-		uintptr(barHeight),
-		swpNoactivate|swpShowwindow,
+		hwnd, hwndTopmost,
+		uintptr(mon.Left), uintptr(mon.Top),
+		uintptr(physW), uintptr(barHeight),
+		swpNoactivate|swpShowwindow|swpNosendchanging,
 	)
 }
 
@@ -123,7 +129,7 @@ func RemoveAppBar(hwnd uintptr) {
 	procSHAppBarMsg.Call(abmRemove, uintptr(unsafe.Pointer(&abd)))
 }
 
-func registerAppBar(hwnd uintptr, mon MonitorInfo, barHeight int) {
+func registerAppBar(hwnd uintptr, mon MonitorInfo, barHeight, physW int) {
 	abd := appBarData{
 		cbSize: uint32(unsafe.Sizeof(appBarData{})),
 		hWnd:   hwnd,
@@ -131,18 +137,34 @@ func registerAppBar(hwnd uintptr, mon MonitorInfo, barHeight int) {
 		rc: rect32{
 			Left:   mon.Left,
 			Top:    mon.Top,
-			Right:  mon.Left + int32(mon.Width),
+			Right:  mon.Left + int32(physW),
 			Bottom: mon.Top + int32(barHeight),
 		},
 	}
-	// Register the appbar window
 	procSHAppBarMsg.Call(abmNew, uintptr(unsafe.Pointer(&abd)))
-	// Let Windows adjust the rect if another bar already occupies top
 	procSHAppBarMsg.Call(abmQuerypos, uintptr(unsafe.Pointer(&abd)))
-	// Enforce our desired height (Windows may have expanded the rect)
 	abd.rc.Bottom = abd.rc.Top + int32(barHeight)
-	// Claim the position — Windows now reserves this strip
 	procSHAppBarMsg.Call(abmSetpos, uintptr(unsafe.Pointer(&abd)))
+}
+
+// GetWindowSize returns the window's physical pixel dimensions.
+func GetWindowSize(hwnd uintptr) (left, top, width, height int) {
+	var wr rect32
+	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
+	return int(wr.Left), int(wr.Top), int(wr.Right - wr.Left), int(wr.Bottom - wr.Top)
+}
+
+// SetWindowHeight forces the window to a specific physical pixel height.
+func SetWindowHeight(hwnd uintptr, physHeight int) {
+	var wr rect32
+	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
+	w := int(wr.Right - wr.Left)
+	procSetWindowPos.Call(
+		hwnd, hwndTopmost,
+		uintptr(wr.Left), uintptr(wr.Top),
+		uintptr(w), uintptr(physHeight),
+		swpNoactivate|swpShowwindow,
+	)
 }
 
 // SetOpacity controls window transparency via WS_EX_LAYERED (0.0–1.0).
