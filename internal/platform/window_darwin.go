@@ -45,12 +45,15 @@ void platformSetClickThrough(int enabled) {
 void platformDockToMonitor(int left, int top, int width, int height) {
     NSWindow* w = findOurWindow();
     if (!w) return;
-    // macOS uses a bottom-left origin coordinate system. We receive top-left
-    // pixel coordinates (matching our cross-platform MonitorInfo convention),
-    // so flip Y against the primary screen height.
+    // macOS uses a bottom-left origin coordinate system, AND its system menu
+    // bar always renders above every window level — even NSStatusWindowLevel.
+    // So we position our bar at the top of [NSScreen visibleFrame], which is
+    // the area excluding the menu bar (and the Dock if on top, though it
+    // never is). Effectively the bar sits just below the menu bar.
     NSScreen* main = [NSScreen mainScreen];
-    CGFloat screenH = main ? main.frame.size.height : 0;
-    CGFloat y = screenH - (CGFloat)(top + height);
+    if (!main) return;
+    NSRect visible = [main visibleFrame];
+    CGFloat y = visible.origin.y + visible.size.height - (CGFloat)height;
     NSRect frame = NSMakeRect((CGFloat)left, y, (CGFloat)width, (CGFloat)height);
     [w setFrame:frame display:YES];
 }
@@ -88,14 +91,13 @@ func ApplyBarStyles(hwnd uintptr) {
 }
 
 func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
-	// macOS has no AppBar equivalent — NSWindow.level = NSStatusWindowLevel
-	// already floats above normal windows. We position to the top of the
-	// chosen NSScreen but cannot reserve space the way SHAppBarMessage does.
-	width := mon.PhysWidth
-	if width == 0 {
-		width = mon.Width
-	}
-	C.platformDockToMonitor(C.int(mon.Left), C.int(mon.Top), C.int(width), C.int(barHeight))
+	// macOS has no AppBar equivalent — Cocoa always renders the system menu
+	// bar above every window level. The Objective-C side positions us at
+	// [NSScreen visibleFrame] (the area below the menu bar) instead of
+	// fighting it. NSWindow geometry uses POINTS, so pass mon.Width (points),
+	// NOT PhysWidth (Retina pixels) — otherwise on a 2x display the window
+	// would be twice as wide as the screen.
+	C.platformDockToMonitor(C.int(mon.Left), C.int(mon.Top), C.int(mon.Width), C.int(barHeight))
 }
 
 func RemoveAppBar(hwnd uintptr) {
