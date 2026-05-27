@@ -9,7 +9,7 @@ Monitor token usage, switch accounts, dock across monitors, and stream Lo-Fi rad
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go 1.25" />
   <img src="https://img.shields.io/badge/Wails-v2-DF0067" alt="Wails v2" />
   <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-success" alt="Windows | macOS | Linux" />
-  <img src="https://img.shields.io/badge/RAM-~30MB-orange" alt="~30MB RAM" />
+  <img src="https://img.shields.io/badge/RAM-~6MB-orange" alt="~6MB RAM" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
 </p>
 
