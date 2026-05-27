@@ -350,8 +350,12 @@ async function toggleRadio() {
       }
       await loadYtIframeApi();
       ytPlayer = new YT.Player('yt-player', {
-        height: '0',
-        width: '0',
+        // YouTube refuses to play in 0x0 iframes (visibility / anti-fraud
+        // heuristic — their docs require >=200x200). The host container
+        // is positioned off-screen and overflow-clipped so the user never
+        // sees it. See index.html for the container styles.
+        height: '200',
+        width: '200',
         videoId: 'YmQ7jRgf4f0',
         playerVars: {
           'playsinline': 1,

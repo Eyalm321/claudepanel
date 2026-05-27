@@ -135,7 +135,12 @@
 
   </div>
 
-  <div id="yt-player-container" style="position: absolute; top: -100px; left: -100px; width: 1px; height: 1px; opacity: 0; pointer-events: none;">
+  <!-- Off-screen container for the YouTube IFrame player. We must give the
+       iframe non-zero dimensions (YouTube refuses to play in 0x0 iframes —
+       its visibility check requires >=200x200). The container sits well
+       off-screen with overflow:hidden so the 200x200 iframe is never
+       actually visible. -->
+  <div id="yt-player-container" style="position: absolute; top: -9999px; left: -9999px; width: 200px; height: 200px; overflow: hidden; opacity: 0; pointer-events: none;">
     <div id="yt-player"></div>
   </div>
 
