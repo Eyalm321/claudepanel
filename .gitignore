@@ -1,3 +1,29 @@
-build/bin
-frontend/dist
-frontend/node_modules
+# Wails Build Out
+build/bin/
+frontend/dist/
+frontend/node_modules/
+
+# Executables & Local Binaries
+*.exe
+*.exe.local
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Temporary & Packaging files
+nfpm.tmp.yaml
+*.tmp
+
+# Logs
+*.log
+debug.log
+
+# OS Junk
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

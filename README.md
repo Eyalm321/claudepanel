@@ -2,6 +2,8 @@
 
 A highly customized, lightweight desktop utility bar for **Windows, macOS, and Linux** that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, cross-platform monospace typography, and an interactive headless YouTube audio stream (Claude FM).
 
+![ClaudePanel Screenshot](screenshot.png)
+
 ```
 👾 │ ACCT: MAIN [PRO] │ WEEKLY: 71% ░░░░░░··· │ RESET: 4D 18H │ OPUS │ IDLE │ CLAUDE FM [ON] · VOL 120%
 ```
