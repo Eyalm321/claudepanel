@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>__claudebar__</title>
+  <title>__claudepanel__</title>
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
@@ -17,80 +17,118 @@
 
     <div class="sep">·</div>
 
-    <!-- Account cycler: ◀ MAIN [MAX] ▶ — click arrows to switch -->
-    <div class="seg seg--nodrag" id="seg-acct" title="Click ◀ ▶ to switch account">
-      <span class="arrow" id="btn-acct-prev">◀</span>
-      <span class="val" id="val-acct">---</span>
-      <span class="sub" id="val-sub">[---]</span>
-      <span class="arrow" id="btn-acct-next">▶</span>
+    <!-- Main Bar Statistics and Controls -->
+    <div id="bar-main-contents" style="display: flex; align-items: center; flex: 1; min-width: 0; height: 100%;">
+      <!-- Account cycler: ◀ MAIN [MAX] ▶ — click arrows to switch -->
+      <div class="seg seg--nodrag" id="seg-acct" title="Click ◀ ▶ to switch account">
+        <span class="arrow" id="btn-acct-prev">◀</span>
+        <span class="val" id="val-acct">---</span>
+        <span class="sub" id="val-sub">[---]</span>
+        <span class="arrow" id="btn-acct-next">▶</span>
+      </div>
+
+      <div class="sep">·</div>
+
+      <!-- Msgs this billing period -->
+      <div class="seg" id="seg-msgs"><span class="lbl">MSGS:</span><span class="val-wrap"><span class="val" id="val-msgs">---</span><span class="prog" id="prog-wrap"><span class="prog-text"><span class="prog-fill" id="prog-fill-text"></span><span class="prog-empty" id="prog-empty-text"></span></span><span class="prog-bar"><span class="prog-bar-fill" id="prog-fill-bar"></span><span class="cursor-bar"></span></span></span><span class="cursor-text">█</span></span></div>
+
+      <div class="sep">·</div>
+
+      <!-- Reset countdown (weekly) -->
+      <div class="seg" id="seg-reset">
+        <span class="lbl">RESET:</span>
+        <span class="val" id="val-reset">---</span>
+      </div>
+
+      <div class="sep" id="sep-hourly" style="display: none;">·</div>
+
+      <!-- 5-hour rolling usage -->
+      <div class="seg" id="seg-hourly" style="display: none;"><span class="lbl">5H:</span><span class="val-wrap"><span class="val" id="val-hourly">---</span><span class="prog" id="prog-wrap-hourly"><span class="prog-text"><span class="prog-fill" id="prog-fill-hourly-text"></span><span class="prog-empty" id="prog-empty-hourly-text"></span></span><span class="prog-bar"><span class="prog-bar-fill" id="prog-fill-hourly-bar"></span><span class="cursor-bar"></span></span></span></span></div>
+
+      <div class="sep" id="sep-hourly-reset" style="display: none;">·</div>
+
+      <!-- 5-hour reset countdown -->
+      <div class="seg" id="seg-hourly-reset" style="display: none;">
+        <span class="lbl">RESET:</span>
+        <span class="val" id="val-hourly-reset">---</span>
+      </div>
+
+      <div class="sep">·</div>
+
+      <!-- Primary model -->
+      <div class="seg">
+        <span class="val" id="val-model">---</span>
+      </div>
+
+      <div class="sep">·</div>
+
+      <!-- Session status -->
+      <div class="seg" id="seg-status">
+        <span class="val" id="val-status">IDLE</span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <!-- Radio Toggle: CLAUDE FM -->
+      <div class="seg seg--nodrag" id="seg-radio" title="Click to play/pause. Scroll/click to adjust volume.">
+        <div class="radio-title-wrap"><span class="lbl" id="radio-title">CLAUDE FM</span></div>
+        <span class="val" id="radio-status">[OFF]</span>
+        <span class="sep" id="radio-vol-sep">·</span>
+        <span class="lbl" id="radio-vol-lbl">VOL</span>
+        <span class="val" id="radio-vol">50%</span>
+      </div>
+
+      <div class="sep">·</div>
+
+      <!-- Monitor cycler: ◀ MON 1 ▶ — click arrows to move bar between screens -->
+      <div class="seg seg--nodrag" id="seg-mon" title="Click ◀ ▶ to move bar to another screen">
+        <span class="arrow" id="btn-mon-prev">◀</span>
+        <span class="lbl">MON</span>
+        <span class="val" id="val-mon">1</span>
+        <span class="arrow" id="btn-mon-next">▶</span>
+      </div>
+
+      <div class="sep">·</div>
+
+      <!-- Theme cycler: ◀ THEME CLAUDE ▶ -->
+      <div class="seg seg--nodrag" id="seg-theme" title="Click ◀ ▶ to change theme">
+        <span class="arrow" id="btn-theme-prev">◀</span>
+        <span class="lbl">THEME</span>
+        <span class="val" id="val-theme">CLAUDE</span>
+        <span class="arrow" id="btn-theme-next">▶</span>
+      </div>
     </div>
 
-    <div class="sep">·</div>
-
-    <!-- Msgs this billing period -->
-    <div class="seg" id="seg-msgs"><span class="lbl">MSGS:</span><span class="val-wrap"><span class="val" id="val-msgs">---</span><span class="prog" id="prog-wrap"><span class="prog-fill" id="prog-fill"></span><span class="prog-empty" id="prog-empty"></span></span><span class="cursor">█</span></span></div>
-
-    <div class="sep">·</div>
-
-    <!-- Reset countdown (weekly) -->
-    <div class="seg" id="seg-reset">
-      <span class="lbl">RESET:</span>
-      <span class="val" id="val-reset">---</span>
+    <!-- Accounts Editor overlay (Inline horizontal panel, hidden by default) -->
+    <div id="bar-editor-contents" style="display: none; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 100%;">
+      <span class="lbl">ACCOUNTS:</span>
+      <select id="editor-acct-select" class="editor-select"></select>
+      
+      <button id="btn-acct-edit" class="editor-btn">EDIT</button>
+      <button id="btn-acct-add" class="editor-btn">ADD</button>
+      <button id="btn-acct-del" class="editor-btn">DELETE</button>
+      
+      <div class="sep" id="editor-form-sep" style="display: none;">·</div>
+      
+      <!-- Sub-form for adding/editing -->
+      <div id="editor-form" style="display: none; align-items: center; gap: 5px;">
+        <span class="lbl">NAME:</span>
+        <input type="text" id="input-acct-name" class="editor-input" placeholder="main" style="width: 60px;">
+        <span class="lbl">PATH:</span>
+        <input type="text" id="input-acct-path" class="editor-input" placeholder="~/.claude" style="width: 170px;">
+        <button id="btn-acct-save" class="editor-btn editor-btn--accent">SAVE</button>
+        <button id="btn-acct-cancel" class="editor-btn">CANCEL</button>
+      </div>
+      
+      <div class="spacer"></div>
+      
+      <button id="btn-acct-close" class="editor-btn">EXIT</button>
     </div>
 
-    <div class="sep" id="sep-hourly" style="display: none;">·</div>
+  </div>
 
-    <!-- 5-hour rolling usage -->
-    <div class="seg" id="seg-hourly" style="display: none;">
-      <span class="lbl">5H:</span>
-      <span class="val" id="val-hourly">---</span>
-      <span class="prog" id="prog-wrap-hourly">
-        <span class="prog-fill" id="prog-fill-hourly"></span><span class="prog-empty" id="prog-empty-hourly"></span>
-      </span>
-    </div>
-
-    <div class="sep" id="sep-hourly-reset" style="display: none;">·</div>
-
-    <!-- 5-hour reset countdown -->
-    <div class="seg" id="seg-hourly-reset" style="display: none;">
-      <span class="lbl">RESET:</span>
-      <span class="val" id="val-hourly-reset">---</span>
-    </div>
-
-    <div class="sep">·</div>
-
-    <!-- Primary model -->
-    <div class="seg">
-      <span class="val" id="val-model">---</span>
-    </div>
-
-    <div class="sep">·</div>
-
-    <!-- Session status -->
-    <div class="seg" id="seg-status">
-      <span class="val" id="val-status">OFFLINE</span>
-    </div>
-
-    <div class="spacer"></div>
-
-    <!-- Monitor cycler: ◀ MON 1 ▶ — click arrows to move bar between screens -->
-    <div class="seg seg--nodrag" id="seg-mon" title="Click ◀ ▶ to move bar to another screen">
-      <span class="arrow" id="btn-mon-prev">◀</span>
-      <span class="lbl">MON</span>
-      <span class="val" id="val-mon">1</span>
-      <span class="arrow" id="btn-mon-next">▶</span>
-    </div>
-
-    <div class="sep">·</div>
-
-    <!-- Theme cycler: ◀ THEME CLAUDE ▶ -->
-    <div class="seg seg--nodrag" id="seg-theme" title="Click ◀ ▶ to change theme">
-      <span class="arrow" id="btn-theme-prev">◀</span>
-      <span class="lbl">THEME</span>
-      <span class="val" id="val-theme">CLAUDE</span>
-      <span class="arrow" id="btn-theme-next">▶</span>
-    </div>
-
+  <div id="yt-player-container" style="position: absolute; top: -100px; left: -100px; width: 1px; height: 1px; opacity: 0; pointer-events: none;">
+    <div id="yt-player"></div>
   </div>
 
   <script src="./src/main.js" type="module"></script>

@@ -76,8 +76,6 @@ export namespace config {
 	    theme: string;
 	    opacity: number;
 	    refreshSeconds: number;
-	    weeklyMsgLimit: number;
-	    billingResetDay: number;
 	    barHeight: number;
 	    activeAccount: number;
 	    accounts: AccountConfig[];
@@ -96,8 +94,6 @@ export namespace config {
 	        this.theme = source["theme"];
 	        this.opacity = source["opacity"];
 	        this.refreshSeconds = source["refreshSeconds"];
-	        this.weeklyMsgLimit = source["weeklyMsgLimit"];
-	        this.billingResetDay = source["billingResetDay"];
 	        this.barHeight = source["barHeight"];
 	        this.activeAccount = source["activeAccount"];
 	        this.accounts = this.convertValues(source["accounts"], AccountConfig);
@@ -128,7 +124,7 @@ export namespace config {
 
 }
 
-export namespace syswin {
+export namespace platform {
 	
 	export class MonitorInfo {
 	    index: number;

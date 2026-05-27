@@ -71,7 +71,6 @@ func Defaults() Config {
 		AppBarMode:      true,
 		Accounts: []AccountConfig{
 			{Name: "main", Path: filepath.Join(home, ".claude")},
-			{Name: "alt", Path: filepath.Join(home, ".claude-alt")},
 		},
 		Hotkeys: HotkeyConfig{
 			CycleMonitor:       "Ctrl+Alt+M",

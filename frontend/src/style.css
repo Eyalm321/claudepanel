@@ -373,3 +373,70 @@ html, body {
   font-weight: bold;
 }
 
+/* ── Accounts Editor UI Styles ── */
+.editor-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  padding: 0 4px;
+  outline: none;
+  cursor: pointer;
+  height: 18px;
+  box-sizing: border-box;
+}
+
+.editor-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 4px;
+  outline: none;
+  height: 18px;
+  box-sizing: border-box;
+}
+.editor-input:focus {
+  border-color: var(--clay);
+}
+
+.editor-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--text-muted);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: bold;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  outline: none;
+  height: 18px;
+  box-sizing: border-box;
+}
+.editor-btn:hover {
+  color: var(--text) !important;
+  border-color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.editor-btn--accent {
+  color: var(--clay);
+  border-color: var(--clay);
+}
+.editor-btn--accent:hover {
+  background: var(--clay);
+  color: var(--bg) !important;
+  border-color: var(--clay);
+}
+
+/* Ensure editor dropdown options look right */
+.editor-select option {
+  background: var(--bg);
+  color: var(--text);
+}
+

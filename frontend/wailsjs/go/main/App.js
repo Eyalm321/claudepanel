@@ -18,6 +18,10 @@ export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
 }
 
+export function PlatformGOOS() {
+  return window['go']['main']['App']['PlatformGOOS']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }

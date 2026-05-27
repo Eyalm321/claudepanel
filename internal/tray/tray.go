@@ -14,6 +14,7 @@ const (
 	EventSetMonitor                     // Index int
 	EventToggleClickThrough
 	EventToggleStartup
+	EventManageAccounts
 	EventQuit
 )
 
@@ -154,6 +155,14 @@ func (m *Manager) onReady(iconBytes []byte, version string, accountNames []strin
 	go func() {
 		for range m.startupItem.ClickedCh {
 			m.events <- Event{Type: EventToggleStartup}
+		}
+	}()
+
+	// Configure Accounts item
+	manageAccts := systray.AddMenuItem("Configure Accounts...", "Add, edit, or delete Claude accounts")
+	go func() {
+		for range manageAccts.ClickedCh {
+			m.events <- Event{Type: EventManageAccounts}
 		}
 	}()
 

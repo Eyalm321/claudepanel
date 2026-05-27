@@ -111,6 +111,8 @@ func (a *App) handleTrayEvents() {
 			_ = config.SetStartOnLogin(a.cfg.StartWithWindows, exePath)
 			_ = config.Save(a.cfg)
 			a.trayMgr.SetStartup(a.cfg.StartWithWindows)
+		case tray.EventManageAccounts:
+			runtime.EventsEmit(a.ctx, "show:accounts-editor")
 		case tray.EventQuit:
 			a.trayMgr.Quit()
 			runtime.Quit(a.ctx)
