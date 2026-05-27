@@ -208,14 +208,11 @@ Auto-created on first run:
   "refreshSeconds": 15,
   "barHeight": 28,
   "appBarMode": true,
-  "activeAccount": 0,
-  "accounts": [
-    { "name": "main", "path": "C:\\Users\\USER\\.claude" },
-    { "name": "alt",  "path": "C:\\Users\\USER\\.claude-alt" }
-  ],
   "startWithWindows": false
 }
 ```
+
+> **Accounts** are managed inside the app — open **Manage accounts** from the system tray to add, rename, switch between, or remove Claude account paths. No JSON editing required.
 
 | Field | Description |
 |---|---|
