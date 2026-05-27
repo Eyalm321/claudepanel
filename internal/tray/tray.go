@@ -3,7 +3,11 @@ package tray
 import (
 	"fmt"
 
-	"github.com/getlantern/systray"
+	// Fork of getlantern/systray maintained to coexist with another GUI
+	// framework that already owns NSApp on macOS — getlantern/systray
+	// defines its own AppDelegate, which collides at link time with
+	// Wails' AppDelegate (the v1.0.x release blocker on darwin).
+	"fyne.io/systray"
 )
 
 // Event types emitted by the tray to the app.

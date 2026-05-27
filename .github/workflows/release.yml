@@ -22,12 +22,7 @@ jobs:
           - os: macos-latest
             name: macOS
             artifact: claudepanel-macos-pkg
-            # Wails v2 + getlantern/systray both define an Objective-C
-            # AppDelegate class — Apple's modern ld64 refuses the duplicate
-            # symbols. Real fix is a darwin-specific tray refactor (Wails
-            # built-in menu, or a no-AppDelegate systray fork). Tracked
-            # separately; allow this leg to fail without blocking releases.
-            allow_failure: true
+            allow_failure: false
           - os: ubuntu-latest
             name: Linux
             artifact: claudepanel-linux
