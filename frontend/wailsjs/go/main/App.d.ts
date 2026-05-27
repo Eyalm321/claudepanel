@@ -18,8 +18,12 @@ export function SaveConfig(arg1:config.Config):Promise<void>;
 
 export function SetActiveAccount(arg1:number):Promise<void>;
 
+export function SetEditorOpen(arg1:boolean):Promise<void>;
+
 export function SetMonitor(arg1:number):Promise<void>;
 
 export function SetOpacity(arg1:number):Promise<void>;
+
+export function SetPinned(arg1:boolean):Promise<void>;
 
 export function ToggleClickThrough():Promise<boolean>;

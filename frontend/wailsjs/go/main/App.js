@@ -30,12 +30,20 @@ export function SetActiveAccount(arg1) {
   return window['go']['main']['App']['SetActiveAccount'](arg1);
 }
 
+export function SetEditorOpen(arg1) {
+  return window['go']['main']['App']['SetEditorOpen'](arg1);
+}
+
 export function SetMonitor(arg1) {
   return window['go']['main']['App']['SetMonitor'](arg1);
 }
 
 export function SetOpacity(arg1) {
   return window['go']['main']['App']['SetOpacity'](arg1);
+}
+
+export function SetPinned(arg1) {
+  return window['go']['main']['App']['SetPinned'](arg1);
 }
 
 export function ToggleClickThrough() {

@@ -2,7 +2,7 @@ import './style.css';
 import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
-  SaveConfig
+  SaveConfig, SetPinned, SetEditorOpen
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -151,6 +151,9 @@ async function init() {
     cfg      = await GetConfig();
     monitors = await GetMonitors();
 
+    pinned = cfg.pinned !== false;
+    applyPinUI();
+
     // Hide account cycling arrows if there is only one account configured
     const accounts = (cfg && cfg.accounts) || [];
     if (accounts.length < 2) {
@@ -183,6 +186,8 @@ async function init() {
     EventsOn('account:changed', refresh);
     EventsOn('monitor:changed', updateMonitorDisplay);
     EventsOn('show:accounts-editor', openAccountsEditor);
+    // Auto-hide slide animation is driven from Go (window position);
+    // no JS-side animation state to manage.
 
   } catch (err) {
     console.error('init error:', err);
@@ -259,6 +264,26 @@ function initTheme() {
   activeThemeIdx = idx;
   applyTheme(idx);
 }
+
+// ── Pin / Unpin (auto-hide) ─────────────────────────────────────────────────
+// Auto-hide is driven entirely by a Go-side cursor-position poller — WebView2
+// mouseleave is unreliable on a 28-px-tall window, so JS doesn't observe hover
+// at all. The poller compares the OS cursor against the bar's screen rect.
+let pinned = true;
+
+function applyPinUI() {
+  document.getElementById('seg-pin').classList.toggle('pinned', pinned);
+}
+
+async function togglePin() {
+  pinned = !pinned;
+  applyPinUI();
+  try {
+    await SetPinned(pinned);
+  } catch (e) { console.error('SetPinned failed:', e); }
+}
+
+document.getElementById('seg-pin').addEventListener('click', togglePin);
 
 // ── Radio Player (Claude FM background audio streaming) ──────────────────────
 let ytPlayer = null;
@@ -413,18 +438,23 @@ let editorFormMode = "edit"; // "edit" or "add"
 async function openAccountsEditor() {
   try {
     editorConfig = await GetConfig();
-    
+
     // Hide standard bar segments
     document.getElementById('bar-main-contents').style.display = 'none';
-    
+
     // Populate select dropdown
     renderEditorSelect();
-    
+
     // Reset inputs & hide the form segment
     hideEditorForm();
-    
+
     // Show the editor panel
     document.getElementById('bar-editor-contents').style.display = 'flex';
+
+    // Tell the Go-side hover-watcher to keep the bar expanded (and force-expand
+    // it immediately, since the editor is opened from the tray with the cursor
+    // off-bar).
+    SetEditorOpen(true);
   } catch (err) {
     console.error('Failed to open accounts editor:', err);
   }
@@ -453,10 +483,10 @@ function renderEditorSelect() {
 function showEditorForm(mode) {
   editorFormMode = mode;
   const form = document.getElementById('editor-form');
-  const sep = document.getElementById('editor-form-sep');
+  const listControls = document.getElementById('editor-list-controls');
   
   if (form) form.style.display = 'flex';
-  if (sep) sep.style.display = 'inline-block';
+  if (listControls) listControls.style.display = 'none';
   
   const nameInput = document.getElementById('input-acct-name');
   const pathInput = document.getElementById('input-acct-path');
@@ -480,9 +510,9 @@ function showEditorForm(mode) {
 
 function hideEditorForm() {
   const form = document.getElementById('editor-form');
-  const sep = document.getElementById('editor-form-sep');
+  const listControls = document.getElementById('editor-list-controls');
   if (form) form.style.display = 'none';
-  if (sep) sep.style.display = 'none';
+  if (listControls) listControls.style.display = 'flex';
 }
 
 async function saveAccount() {
@@ -561,6 +591,7 @@ async function deleteAccount() {
 function closeAccountsEditor() {
   document.getElementById('bar-editor-contents').style.display = 'none';
   document.getElementById('bar-main-contents').style.display = 'flex';
+  SetEditorOpen(false);
 }
 
 // Bind editor listeners once DOM is ready

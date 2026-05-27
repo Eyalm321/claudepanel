@@ -29,6 +29,7 @@ type Config struct {
 	StartWithWindows bool            `json:"startWithWindows"`
 	ClickThrough     bool            `json:"clickThrough"`
 	AppBarMode       bool            `json:"appBarMode"` // push apps down (AppBar API)
+	Pinned           bool            `json:"pinned"`     // false = auto-hide on mouseleave, undocked
 }
 
 func AppDataDir() string {
@@ -78,6 +79,7 @@ func Defaults() Config {
 		},
 		StartWithWindows: false,
 		ClickThrough:     false,
+		Pinned:           true,
 	}
 }
 

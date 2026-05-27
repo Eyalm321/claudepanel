@@ -83,6 +83,7 @@ export namespace config {
 	    startWithWindows: boolean;
 	    clickThrough: boolean;
 	    appBarMode: boolean;
+	    pinned: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -101,6 +102,7 @@ export namespace config {
 	        this.startWithWindows = source["startWithWindows"];
 	        this.clickThrough = source["clickThrough"];
 	        this.appBarMode = source["appBarMode"];
+	        this.pinned = source["pinned"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <div id="bar" style="--wails-draggable: drag">
+  <div id="bar" style="--wails-draggable: no-drag">
     <div class="scanlines" aria-hidden="true"></div>
 
     <!-- Brand -->
@@ -97,20 +97,30 @@
         <span class="val" id="val-theme">CLAUDE</span>
         <span class="arrow" id="btn-theme-next">▶</span>
       </div>
+
+      <div class="sep">·</div>
+
+      <!-- Pin/unpin toggle: orange = pinned (docked + always visible), gray = unpinned (auto-hide on mouseleave) -->
+      <div class="seg seg--nodrag" id="seg-pin" title="Pin / unpin (auto-hide on mouseleave)">
+        <svg class="pin-icon" id="icon-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+      </div>
     </div>
 
     <!-- Accounts Editor overlay (Inline horizontal panel, hidden by default) -->
     <div id="bar-editor-contents" style="display: none; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 100%;">
-      <span class="lbl">ACCOUNTS:</span>
-      <select id="editor-acct-select" class="editor-select"></select>
+      <button id="btn-acct-close" class="editor-btn">BACK</button>
+
+      <!-- List Controls (Hidden during Edit/Add) -->
+      <div id="editor-list-controls" style="display: flex; align-items: center; gap: 8px;">
+        <span class="lbl">ACCOUNTS:</span>
+        <select id="editor-acct-select" class="editor-select"></select>
+        
+        <button id="btn-acct-edit" class="editor-btn">EDIT</button>
+        <button id="btn-acct-add" class="editor-btn">ADD</button>
+        <button id="btn-acct-del" class="editor-btn">DELETE</button>
+      </div>
       
-      <button id="btn-acct-edit" class="editor-btn">EDIT</button>
-      <button id="btn-acct-add" class="editor-btn">ADD</button>
-      <button id="btn-acct-del" class="editor-btn">DELETE</button>
-      
-      <div class="sep" id="editor-form-sep" style="display: none;">·</div>
-      
-      <!-- Sub-form for adding/editing -->
+      <!-- Sub-form for adding/editing (Hidden by default, replaces List Controls when editing) -->
       <div id="editor-form" style="display: none; align-items: center; gap: 5px;">
         <span class="lbl">NAME:</span>
         <input type="text" id="input-acct-name" class="editor-input" placeholder="main" style="width: 60px;">
@@ -121,8 +131,6 @@
       </div>
       
       <div class="spacer"></div>
-      
-      <button id="btn-acct-close" class="editor-btn">EXIT</button>
     </div>
 
   </div>

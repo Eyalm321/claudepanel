@@ -43,6 +43,11 @@ html, body {
   border-bottom: 1px solid rgba(107, 114, 128, 0.15);
 }
 
+/* Auto-hide slide is driven by moving the OS window itself (see
+   platform.MoveWindow / app.animateY), not via CSS — that way the dark
+   window background slides off the top of the screen together with the
+   bar, leaving no leftover frame behind. */
+
 .scanlines {
   display: none;
 }
@@ -97,6 +102,23 @@ html, body {
   font-size: 9px;
 }
 .arrow:hover { color: var(--clay); }
+
+/* ── Pin / Unpin toggle ── */
+#seg-pin { cursor: pointer; padding: 0 4px; }
+.pin-icon {
+  width: 12px;
+  height: 12px;
+  fill: var(--text-muted);          /* gray = unpinned */
+  transform: rotate(0deg);          /* upright = unpinned */
+  transform-origin: 50% 50%;
+  transition: fill 0.1s ease, filter 0.1s ease, transform 0.15s ease;
+  display: block;
+}
+#seg-pin.pinned .pin-icon {
+  fill: var(--clay);                /* orange (theme accent) = pinned */
+  transform: rotate(45deg);         /* tilted right = "pushed in" */
+}
+#seg-pin:hover .pin-icon { filter: brightness(1.25); }
 
 /* ── Blinking Caret/Cursor ── */
 @keyframes blink {

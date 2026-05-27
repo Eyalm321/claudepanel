@@ -152,6 +152,22 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 		"-set", "_NET_WM_WINDOW_OPACITY", strconv.FormatUint(uint64(alpha), 10)).Run()
 }
 
+// GetCursorPos is a stub on Linux; the hover-watcher is Windows-only for v1.
+func GetCursorPos() (int, int) { return -1, -1 }
+
+// ResetDwmFrame is a Windows-only concept; no-op elsewhere.
+func ResetDwmFrame(hwnd uintptr) {}
+
+// HideWindow / ShowWindow no-op on Linux for now (auto-hide is Windows-only v1).
+func HideWindow(hwnd uintptr) {}
+func ShowWindow(hwnd uintptr) {}
+
+// MoveWindow no-op on Linux for now (slide animation is Windows-only v1).
+func MoveWindow(hwnd uintptr, x, y int) {}
+
+// SetWindowClipTop no-op on Linux for now.
+func SetWindowClipTop(hwnd uintptr, width, height, topClip int) {}
+
 func SetClickThrough(hwnd uintptr, enabled bool) {
 	// Click-through requires the XShape extension and a Go binding for it
 	// (jezek/xgb/shape). Deferred to a follow-up; on Linux this is a no-op

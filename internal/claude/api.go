@@ -16,6 +16,7 @@ type APIUsage struct {
 	ResetAt       time.Time // seven_day reset; zero if unavailable
 	HourlyResetAt time.Time // five_hour reset; zero if unavailable
 	LimitExceeded bool
+	ModelID       string
 }
 
 type rateLimitWindow struct {
@@ -23,9 +24,16 @@ type rateLimitWindow struct {
 	ResetsAt       int64   `json:"resets_at"`
 }
 
+type rateLimitModel struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
 type rateLimitsFile struct {
 	FiveHour   *rateLimitWindow `json:"five_hour"`
 	SevenDay   *rateLimitWindow `json:"seven_day"`
+	ModelID    string           `json:"model_id"`
+	Model      *rateLimitModel  `json:"model"`
 	CapturedAt int64            `json:"captured_at"`
 }
 
@@ -43,6 +51,16 @@ func ReadUsage(accountPath string) *APIUsage {
 	}
 
 	out := &APIUsage{WeeklyPercent: -1, HourlyPercent: -1}
+	if rl.ModelID != "" {
+		out.ModelID = rl.ModelID
+	} else if rl.Model != nil {
+		if rl.Model.ID != "" {
+			out.ModelID = rl.Model.ID
+		} else if rl.Model.DisplayName != "" {
+			out.ModelID = rl.Model.DisplayName
+		}
+	}
+
 	if rl.SevenDay != nil {
 		out.WeeklyPercent = clampPct(rl.SevenDay.UsedPercentage / 100.0)
 		if rl.SevenDay.ResetsAt > 0 {

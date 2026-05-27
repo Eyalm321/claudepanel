@@ -93,7 +93,12 @@ func ComputeBarData(
 		resetIn = formatDuration(nextReset.Sub(now))
 	}
 
-	primaryModel := computePrimaryModel(sc, periodStartStr)
+	var primaryModel string
+	if apiUsage != nil && apiUsage.ModelID != "" {
+		primaryModel = shortModelName(apiUsage.ModelID)
+	} else {
+		primaryModel = computePrimaryModel(sc, periodStartStr)
+	}
 	status := computeStatus(sessions)
 
 	limitExceeded := false
