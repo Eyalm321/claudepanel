@@ -358,11 +358,20 @@ async function toggleRadio() {
           'controls': 0,
           'disablekb': 1,
           'fs': 0,
-          'rel': 0
+          'rel': 0,
+          // Start with autoplay + muted so the YouTube IFrame's own gesture
+          // policy is satisfied even when our click gesture has expired by
+          // the time the iframe loads (most relevant on macOS WKWebView,
+          // even with mediaTypesRequiringUserActionForPlayback disabled at
+          // the webview level — YouTube enforces its own check inside the
+          // cross-origin frame). We unmute immediately in onReady.
+          'autoplay': 1,
+          'mute': 1
         },
         events: {
           'onReady': (event) => {
             ytPlayer.setVolume(Math.round(currentVolume / 2));
+            event.target.unMute();
             event.target.playVideo();
             isRadioPlaying = true;
             statusEl.textContent = '[ON]';
