@@ -18,56 +18,78 @@ static NSWindow* findOurWindow(void) {
     return nil;
 }
 
+// Every NSWindow / NSApp / NSScreen mutation must happen on the main thread.
+// Wails invokes OnDomReady / Wails-bound methods on a background goroutine, so
+// raw cgo calls into AppKit from there get killed by AppKit's main-thread
+// safety check (SIGTRAP on modern macOS). runOnMain bridges to the main queue
+// — synchronously, since callers expect the work to be done by return time.
+static inline void runOnMain(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
+}
+
 void platformApplyBarStyles(void) {
-    NSWindow* w = findOurWindow();
-    if (!w) return;
-    [w setStyleMask:NSWindowStyleMaskBorderless];
-    [w setLevel:NSStatusWindowLevel];
-    [w setCollectionBehavior:(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary)];
-    [w setHasShadow:NO];
-    [w setMovable:NO];
+    runOnMain(^{
+        NSWindow* w = findOurWindow();
+        if (!w) return;
+        [w setStyleMask:NSWindowStyleMaskBorderless];
+        [w setLevel:NSStatusWindowLevel];
+        [w setCollectionBehavior:(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary)];
+        [w setHasShadow:NO];
+        [w setMovable:NO];
+    });
 }
 
 void platformSetOpacity(double opacity) {
-    NSWindow* w = findOurWindow();
-    if (!w) return;
-    if (opacity < 0) opacity = 0;
-    if (opacity > 1) opacity = 1;
-    [w setAlphaValue:opacity];
+    runOnMain(^{
+        NSWindow* w = findOurWindow();
+        if (!w) return;
+        double a = opacity;
+        if (a < 0) a = 0;
+        if (a > 1) a = 1;
+        [w setAlphaValue:a];
+    });
 }
 
 void platformSetClickThrough(int enabled) {
-    NSWindow* w = findOurWindow();
-    if (!w) return;
-    [w setIgnoresMouseEvents:(enabled ? YES : NO)];
+    runOnMain(^{
+        NSWindow* w = findOurWindow();
+        if (!w) return;
+        [w setIgnoresMouseEvents:(enabled ? YES : NO)];
+    });
 }
 
 void platformDockToMonitor(int left, int top, int width, int height) {
-    NSWindow* w = findOurWindow();
-    if (!w) return;
-    // macOS uses a bottom-left origin coordinate system, AND its system menu
-    // bar always renders above every window level — even NSStatusWindowLevel.
-    // So we position our bar at the top of [NSScreen visibleFrame], which is
-    // the area excluding the menu bar (and the Dock if on top, though it
-    // never is). Effectively the bar sits just below the menu bar.
-    NSScreen* main = [NSScreen mainScreen];
-    if (!main) return;
-    NSRect visible = [main visibleFrame];
-    CGFloat y = visible.origin.y + visible.size.height - (CGFloat)height;
-    NSRect frame = NSMakeRect((CGFloat)left, y, (CGFloat)width, (CGFloat)height);
-    [w setFrame:frame display:YES];
+    runOnMain(^{
+        NSWindow* w = findOurWindow();
+        if (!w) return;
+        // The system menu bar always renders above every window level, so we
+        // position at the top of [NSScreen visibleFrame] (the area below the
+        // menu bar) rather than at the screen's true top edge.
+        NSScreen* main = [NSScreen mainScreen];
+        if (!main) return;
+        NSRect visible = [main visibleFrame];
+        CGFloat y = visible.origin.y + visible.size.height - (CGFloat)height;
+        NSRect frame = NSMakeRect((CGFloat)left, y, (CGFloat)width, (CGFloat)height);
+        [w setFrame:frame display:YES];
+    });
 }
 
 void platformGetWindowSize(int* outLeft, int* outTop, int* outWidth, int* outHeight) {
-    NSWindow* w = findOurWindow();
-    if (!w) { *outLeft = *outTop = *outWidth = *outHeight = 0; return; }
-    NSRect f = [w frame];
-    NSScreen* main = [NSScreen mainScreen];
-    CGFloat screenH = main ? main.frame.size.height : 0;
-    *outLeft = (int)f.origin.x;
-    *outTop = (int)(screenH - f.origin.y - f.size.height);
-    *outWidth = (int)f.size.width;
-    *outHeight = (int)f.size.height;
+    runOnMain(^{
+        NSWindow* w = findOurWindow();
+        if (!w) { *outLeft = *outTop = *outWidth = *outHeight = 0; return; }
+        NSRect f = [w frame];
+        NSScreen* main = [NSScreen mainScreen];
+        CGFloat screenH = main ? main.frame.size.height : 0;
+        *outLeft = (int)f.origin.x;
+        *outTop = (int)(screenH - f.origin.y - f.size.height);
+        *outWidth = (int)f.size.width;
+        *outHeight = (int)f.size.height;
+    });
 }
 */
 import "C"
