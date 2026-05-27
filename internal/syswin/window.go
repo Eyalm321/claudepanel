@@ -16,11 +16,14 @@ var (
 	procGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible            = user32.NewProc("IsWindowVisible")
 	procGetWindowTextW             = user32.NewProc("GetWindowTextW")
+
+	shell32           = syscall.NewLazyDLL("shell32.dll")
+	procSHAppBarMsg   = shell32.NewProc("SHAppBarMessage")
 )
 
 const (
-	gwlStyle        = uintptr(0xFFFFFFF0) // -16 as unsigned for syscall
-	gwlExStyle      = uintptr(0xFFFFFFEC) // -20 as unsigned for syscall
+	gwlStyle        = uintptr(0xFFFFFFF0) // -16
+	gwlExStyle      = uintptr(0xFFFFFFEC) // -20
 	wsCaption       = uintptr(0x00C00000)
 	wsThickframe    = uintptr(0x00040000)
 	wsMinimizebox   = uintptr(0x00020000)
@@ -36,7 +39,24 @@ const (
 	swpNomove       = uintptr(0x0002)
 	swpFramechanged = uintptr(0x0020)
 	lwaAlpha        = uintptr(0x2)
+
+	// AppBar constants
+	abmNew      = uintptr(0x00000000)
+	abmRemove   = uintptr(0x00000001)
+	abmQuerypos = uintptr(0x00000002)
+	abmSetpos   = uintptr(0x00000003)
+	abeTop      = uint32(1)
 )
+
+// appBarData mirrors the Win32 APPBARDATA struct.
+type appBarData struct {
+	cbSize   uint32
+	hWnd     uintptr
+	uMsg     uint32
+	uEdge    uint32
+	rc       rect32
+	lParam   uintptr
+}
 
 // FindWindowByPID finds a visible window belonging to this process.
 func FindWindowByPID() (uintptr, error) {
@@ -48,10 +68,8 @@ func FindWindowByPID() (uintptr, error) {
 		if wPid == pid {
 			vis, _, _ := procIsWindowVisible.Call(hwnd)
 			if vis != 0 {
-				// Skip the Wails hidden helper window by checking it has non-trivial size
-				// (helper windows tend to be 0x0)
 				found = hwnd
-				return 0 // stop enumeration
+				return 0
 			}
 		}
 		return 1
@@ -65,23 +83,25 @@ func FindWindowByPID() (uintptr, error) {
 
 // ApplyBarStyles strips chrome, marks as tool window, and enables layered compositing.
 func ApplyBarStyles(hwnd uintptr) {
-	// Remove frame chrome
 	style, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlStyle)
 	style &^= wsCaption | wsThickframe | wsMinimizebox | wsMaximizebox | wsSysmenu
 	procSetWindowLongPtrW.Call(hwnd, gwlStyle, style)
 
-	// Tool window (hides from taskbar + alt-tab) + layered (enables opacity)
 	exStyle, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlExStyle)
 	exStyle |= wsExToolwindow | wsExLayered
 	procSetWindowLongPtrW.Call(hwnd, gwlExStyle, exStyle)
 
-	// Force frame change so Windows recomputes chrome
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0,
 		swpNoactivate|swpNosize|swpNomove|swpFramechanged)
 }
 
 // DockToMonitor positions the bar at the top edge of the given monitor.
-func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int) {
+// If appBarMode is true it also registers as a Windows AppBar so maximised
+// apps push below the bar instead of appearing underneath it.
+func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
+	if appBarMode {
+		registerAppBar(hwnd, mon, barHeight)
+	}
 	procSetWindowPos.Call(
 		hwnd,
 		hwndTopmost,
@@ -91,6 +111,38 @@ func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int) {
 		uintptr(barHeight),
 		swpNoactivate|swpShowwindow,
 	)
+}
+
+// RemoveAppBar releases the Windows AppBar reservation for the given window.
+// Call on app exit or before moving to a different monitor.
+func RemoveAppBar(hwnd uintptr) {
+	abd := appBarData{
+		cbSize: uint32(unsafe.Sizeof(appBarData{})),
+		hWnd:   hwnd,
+	}
+	procSHAppBarMsg.Call(abmRemove, uintptr(unsafe.Pointer(&abd)))
+}
+
+func registerAppBar(hwnd uintptr, mon MonitorInfo, barHeight int) {
+	abd := appBarData{
+		cbSize: uint32(unsafe.Sizeof(appBarData{})),
+		hWnd:   hwnd,
+		uEdge:  abeTop,
+		rc: rect32{
+			Left:   mon.Left,
+			Top:    mon.Top,
+			Right:  mon.Left + int32(mon.Width),
+			Bottom: mon.Top + int32(barHeight),
+		},
+	}
+	// Register the appbar window
+	procSHAppBarMsg.Call(abmNew, uintptr(unsafe.Pointer(&abd)))
+	// Let Windows adjust the rect if another bar already occupies top
+	procSHAppBarMsg.Call(abmQuerypos, uintptr(unsafe.Pointer(&abd)))
+	// Enforce our desired height (Windows may have expanded the rect)
+	abd.rc.Bottom = abd.rc.Top + int32(barHeight)
+	// Claim the position — Windows now reserves this strip
+	procSHAppBarMsg.Call(abmSetpos, uintptr(unsafe.Pointer(&abd)))
 }
 
 // SetOpacity controls window transparency via WS_EX_LAYERED (0.0–1.0).
@@ -105,7 +157,7 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 	procSetLayeredWindowAttributes.Call(hwnd, 0, alpha, lwaAlpha)
 }
 
-// SetClickThrough toggles WS_EX_TRANSPARENT so mouse events pass through the window.
+// SetClickThrough toggles WS_EX_TRANSPARENT so mouse events pass through.
 func SetClickThrough(hwnd uintptr, enabled bool) {
 	exStyle, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlExStyle)
 	if enabled {

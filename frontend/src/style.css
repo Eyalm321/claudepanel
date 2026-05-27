@@ -21,7 +21,7 @@ html, body {
   user-select: none;
 }
 
-/* ── Bar container ── */
+/* ── Bar ── */
 #bar {
   position: relative;
   display: flex;
@@ -34,12 +34,11 @@ html, body {
   font-size: 11px;
   letter-spacing: 0.04em;
   padding: 0 6px;
-  gap: 0;
   overflow: hidden;
-  border-bottom: 1px solid rgba(57,255,20,0.12);
+  border-bottom: 1px solid rgba(57,255,20,0.15);
 }
 
-/* ── CRT Scanlines overlay ── */
+/* ── CRT scanlines ── */
 .scanlines {
   position: absolute;
   inset: 0;
@@ -47,15 +46,13 @@ html, body {
   z-index: 20;
   background: repeating-linear-gradient(
     to bottom,
-    transparent         0px,
-    transparent         1px,
-    rgba(0,0,0,0.20)    1px,
-    rgba(0,0,0,0.20)    2px
+    transparent 0px, transparent 1px,
+    rgba(0,0,0,0.22) 1px, rgba(0,0,0,0.22) 2px
   );
 }
 
 /* ── Segments ── */
-.segment {
+.seg {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -63,66 +60,51 @@ html, body {
   white-space: nowrap;
   height: 100%;
 }
-
-.segment--brand .brand-text {
-  color: var(--green);
-  font-weight: bold;
-  letter-spacing: 0.15em;
-  text-shadow: var(--glow);
-}
-
-.segment--actions {
-  gap: 5px;
-  cursor: default;
-}
+.seg--nodrag { --wails-draggable: no-drag; cursor: default; }
+.seg--brand  .brand { font-weight: bold; letter-spacing: 0.15em; text-shadow: var(--glow); }
 
 .spacer { flex: 1; }
+.sep    { color: var(--green-dim); opacity: 0.40; padding: 0 1px; }
 
-/* ── Labels / values ── */
-.sep    { color: var(--green-dim); opacity: 0.45; padding: 0 1px; }
+/* ── Text classes ── */
 .bracket { color: var(--green-dim); }
-.lbl    { color: var(--green-dim); text-shadow: var(--glow-dim); }
-.val    { color: var(--green); text-shadow: var(--glow); }
+.lbl     { color: var(--green-dim); text-shadow: var(--glow-dim); }
+.val     { color: var(--green);     text-shadow: var(--glow); }
+.sub     { color: var(--green-dim); font-size: 10px; text-shadow: var(--glow-dim); }
+
+/* ── Arrow buttons ── */
+.arrow {
+  color: var(--green-dim);
+  cursor: pointer;
+  padding: 0 1px;
+  transition: color 0.1s, text-shadow 0.1s;
+  line-height: 1;
+}
+.arrow:hover { color: var(--green); text-shadow: var(--glow); }
 
 /* ── Progress bar ── */
-.prog       { font-family: var(--font); letter-spacing: -0.02em; }
+.prog       { letter-spacing: -0.02em; }
 .prog-fill  { color: var(--green); text-shadow: var(--glow); }
 .prog-empty { color: var(--green-dark); }
 
-/* ── Status states ── */
-#seg-status.online  .val { color: var(--green); text-shadow: var(--glow); }
-#seg-status.idle    .val { color: #aaee00; text-shadow: 0 0 4px #aaee00; }
-#seg-status.offline .val { color: #3a3a3a; text-shadow: none; }
+/* ── Status classes ── */
+#seg-status.busy    .val { color: var(--green);  text-shadow: var(--glow); }
+#seg-status.idle    .val { color: #aaee00;        text-shadow: 0 0 4px #aaee00; }
+#seg-status.offline .val { color: #3a3a3a;        text-shadow: none; }
+#seg-status.offline .cursor { opacity: 0.25; }
 
-/* ── Warning: >90% usage ── */
-#seg-weekly.warn .val,
-#seg-weekly.warn .prog-fill {
+/* ── Warning: limit exceeded or >90% ── */
+#seg-msgs.warn .val,
+#seg-msgs.warn .prog-fill {
   color: var(--orange);
   text-shadow: 0 0 6px var(--orange), 0 0 12px rgba(255,102,0,0.4);
   animation: flicker 2.5s infinite;
 }
 
-/* ── Action buttons ── */
-.action-btn {
-  color: var(--green-dim);
-  cursor: pointer;
-  padding: 0 2px;
-  transition: color 0.1s, text-shadow 0.1s;
-}
-.action-btn:hover {
-  color: var(--green);
-  text-shadow: var(--glow);
-}
+/* ── Cursor blink ── */
+.cursor { display: inline-block; }
+.blink  { animation: blink-cur 1s step-end infinite; color: var(--green); text-shadow: var(--glow); }
 
-/* ── Blinking cursor ── */
-.blink {
-  display: inline-block;
-  animation: blink-cur 1s step-end infinite;
-  color: var(--green);
-  text-shadow: var(--glow);
-}
-
-/* ── Keyframes ── */
 @keyframes blink-cur {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }

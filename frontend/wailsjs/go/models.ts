@@ -3,14 +3,14 @@ export namespace claude {
 	export class BarData {
 	    accountName: string;
 	    subscriptionType: string;
-	    weeklyTokens: number;
-	    weeklyTokenLimit: number;
-	    weeklyPercent: number;
+	    periodMessages: number;
+	    periodPercent: number;
+	    periodMsgLimit: number;
+	    lastDataLabel: string;
+	    lastDataMsgs: number;
 	    resetIn: string;
 	    primaryModel: string;
 	    status: string;
-	    todayMessages: number;
-	    todayToolCalls: number;
 	    limitExceeded: boolean;
 	    lastUpdated: number;
 	
@@ -22,14 +22,14 @@ export namespace claude {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.accountName = source["accountName"];
 	        this.subscriptionType = source["subscriptionType"];
-	        this.weeklyTokens = source["weeklyTokens"];
-	        this.weeklyTokenLimit = source["weeklyTokenLimit"];
-	        this.weeklyPercent = source["weeklyPercent"];
+	        this.periodMessages = source["periodMessages"];
+	        this.periodPercent = source["periodPercent"];
+	        this.periodMsgLimit = source["periodMsgLimit"];
+	        this.lastDataLabel = source["lastDataLabel"];
+	        this.lastDataMsgs = source["lastDataMsgs"];
 	        this.resetIn = source["resetIn"];
 	        this.primaryModel = source["primaryModel"];
 	        this.status = source["status"];
-	        this.todayMessages = source["todayMessages"];
-	        this.todayToolCalls = source["todayToolCalls"];
 	        this.limitExceeded = source["limitExceeded"];
 	        this.lastUpdated = source["lastUpdated"];
 	    }
@@ -72,7 +72,7 @@ export namespace config {
 	    theme: string;
 	    opacity: number;
 	    refreshSeconds: number;
-	    weeklyTokenLimit: number;
+	    weeklyMsgLimit: number;
 	    billingResetDay: number;
 	    barHeight: number;
 	    activeAccount: number;
@@ -80,6 +80,7 @@ export namespace config {
 	    hotkeys: HotkeyConfig;
 	    startWithWindows: boolean;
 	    clickThrough: boolean;
+	    appBarMode: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -91,7 +92,7 @@ export namespace config {
 	        this.theme = source["theme"];
 	        this.opacity = source["opacity"];
 	        this.refreshSeconds = source["refreshSeconds"];
-	        this.weeklyTokenLimit = source["weeklyTokenLimit"];
+	        this.weeklyMsgLimit = source["weeklyMsgLimit"];
 	        this.billingResetDay = source["billingResetDay"];
 	        this.barHeight = source["barHeight"];
 	        this.activeAccount = source["activeAccount"];
@@ -99,6 +100,7 @@ export namespace config {
 	        this.hotkeys = this.convertValues(source["hotkeys"], HotkeyConfig);
 	        this.startWithWindows = source["startWithWindows"];
 	        this.clickThrough = source["clickThrough"];
+	        this.appBarMode = source["appBarMode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

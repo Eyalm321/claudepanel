@@ -2,22 +2,28 @@ package claude
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var modelVersionRe = regexp.MustCompile(`-(\d+)-(\d+)`)
 
 // BarData is the computed display payload sent to the frontend on each poll.
 type BarData struct {
 	AccountName      string  `json:"accountName"`
 	SubscriptionType string  `json:"subscriptionType"`
-	WeeklyTokens     int64   `json:"weeklyTokens"`
-	WeeklyTokenLimit int64   `json:"weeklyTokenLimit"`
-	WeeklyPercent    float64 `json:"weeklyPercent"` // 0.0–1.0
+	// Message-based usage (more intuitive than raw tokens)
+	PeriodMessages   int64   `json:"periodMessages"`
+	PeriodPercent    float64 `json:"periodPercent"`  // 0.0–1.0 when msgLimit > 0
+	PeriodMsgLimit   int64   `json:"periodMsgLimit"` // 0 = no limit configured
+	// Most recent day with data (stats-cache may lag several days)
+	LastDataLabel    string  `json:"lastDataLabel"` // "TODAY" or "5-21"
+	LastDataMsgs     int     `json:"lastDataMsgs"`
+	// Other metrics
 	ResetIn          string  `json:"resetIn"`
 	PrimaryModel     string  `json:"primaryModel"`
-	Status           string  `json:"status"` // ONLINE / IDLE / OFFLINE
-	TodayMessages    int     `json:"todayMessages"`
-	TodayToolCalls   int     `json:"todayToolCalls"`
+	Status           string  `json:"status"` // BUSY / IDLE / OFFLINE
 	LimitExceeded    bool    `json:"limitExceeded"`
 	LastUpdated      int64   `json:"lastUpdated"` // unix ms
 }
@@ -29,29 +35,52 @@ func ComputeBarData(
 	creds *Credentials,
 	sessions []SessionFile,
 	notifs *NotificationStates,
-	tokenLimit int64,
+	msgLimit int64,
 	billingResetDay int,
 ) *BarData {
 	now := time.Now()
 	periodStart := billingPeriodStart(now, billingResetDay)
 	periodStartStr := periodStart.Format("2006-01-02")
+	todayStr := now.Format("2006-01-02")
 
-	var periodTokens int64
+	// Sum messages for the billing period
+	var periodMsgs int64
+	var lastDate string
+	var lastMsgs int
 	if sc != nil {
-		for _, day := range sc.DailyModelTokens {
+		for _, day := range sc.DailyActivity {
 			if day.Date >= periodStartStr {
-				for _, v := range day.TokensByModel {
-					periodTokens += v
-				}
+				periodMsgs += int64(day.MessageCount)
+			}
+			// Track most recent day that has data
+			if day.Date > lastDate && day.MessageCount > 0 {
+				lastDate = day.Date
+				lastMsgs = day.MessageCount
 			}
 		}
 	}
 
+	// Progress percent — only when a limit is configured
 	var pct float64
-	if tokenLimit > 0 {
-		pct = float64(periodTokens) / float64(tokenLimit)
+	if msgLimit > 0 {
+		pct = float64(periodMsgs) / float64(msgLimit)
 		if pct > 1.0 {
 			pct = 1.0
+		}
+	}
+
+	// Human-readable label for last-data date
+	lastDataLabel := "---"
+	if lastDate != "" {
+		if lastDate == todayStr {
+			lastDataLabel = "TODAY"
+		} else {
+			// Parse and format as "5-21"
+			if t, err := time.Parse("2006-01-02", lastDate); err == nil {
+				lastDataLabel = fmt.Sprintf("%d-%d", int(t.Month()), t.Day())
+			} else {
+				lastDataLabel = lastDate[5:] // "MM-DD"
+			}
 		}
 	}
 
@@ -59,19 +88,7 @@ func ComputeBarData(
 	resetIn := formatDuration(nextReset.Sub(now))
 
 	primaryModel := computePrimaryModel(sc, periodStartStr)
-	status, _ := computeStatus(sessions)
-
-	todayStr := now.Format("2006-01-02")
-	var todayMsgs, todayTools int
-	if sc != nil {
-		for _, day := range sc.DailyActivity {
-			if day.Date == todayStr {
-				todayMsgs = day.MessageCount
-				todayTools = day.ToolCallCount
-				break
-			}
-		}
-	}
+	status := computeStatus(sessions)
 
 	limitExceeded := false
 	if notifs != nil && notifs.ExceedMaxLimit != nil {
@@ -86,14 +103,14 @@ func ComputeBarData(
 	return &BarData{
 		AccountName:      accountName,
 		SubscriptionType: subType,
-		WeeklyTokens:     periodTokens,
-		WeeklyTokenLimit: tokenLimit,
-		WeeklyPercent:    pct,
+		PeriodMessages:   periodMsgs,
+		PeriodPercent:    pct,
+		PeriodMsgLimit:   msgLimit,
+		LastDataLabel:    lastDataLabel,
+		LastDataMsgs:     lastMsgs,
 		ResetIn:          resetIn,
 		PrimaryModel:     primaryModel,
 		Status:           status,
-		TodayMessages:    todayMsgs,
-		TodayToolCalls:   todayTools,
 		LimitExceeded:    limitExceeded,
 		LastUpdated:      now.UnixMilli(),
 	}
@@ -142,44 +159,54 @@ func computePrimaryModel(sc *StatsCache, periodStartStr string) string {
 	return shortModelName(topModel)
 }
 
+// shortModelName converts a full model ID to a compact display name with version.
+// e.g. "claude-opus-4-7" → "OPUS 4.7"
 func shortModelName(full string) string {
+	if full == "" {
+		return "---"
+	}
 	lower := strings.ToLower(full)
+
+	var family string
 	switch {
 	case strings.Contains(lower, "opus"):
-		return "OPUS"
+		family = "OPUS"
 	case strings.Contains(lower, "sonnet"):
-		return "SONNET"
+		family = "SONNET"
 	case strings.Contains(lower, "haiku"):
-		return "HAIKU"
-	case full == "":
-		return "---"
+		family = "HAIKU"
 	default:
 		if len(full) > 8 {
 			return strings.ToUpper(full[:8])
 		}
 		return strings.ToUpper(full)
 	}
+
+	// Extract major.minor version from pattern like "-4-7"
+	if m := modelVersionRe.FindStringSubmatch(lower); m != nil {
+		return family + " " + m[1] + "." + m[2]
+	}
+	return family
 }
 
-func computeStatus(sessions []SessionFile) (string, int) {
+// computeStatus derives BUSY/IDLE/OFFLINE from session file freshness.
+// Real session statuses seen: "busy" (processing), "idle" (open but waiting).
+func computeStatus(sessions []SessionFile) string {
 	nowMs := time.Now().UnixMilli()
-	active := 0
-	anyRecentIdle := false
 	for _, s := range sessions {
 		age := nowMs - s.UpdatedAt
-		if s.Status == "active" && age < 5*60*1000 {
-			active++
-		} else if age < 30*60*1000 {
-			anyRecentIdle = true
+		// Any non-idle status updated in the last 5 minutes = actively working
+		if s.Status != "idle" && age < 5*60*1000 {
+			return "BUSY"
 		}
 	}
-	if active > 0 {
-		return "ONLINE", active
+	// Any session updated in the last 60 minutes = someone has Claude open
+	for _, s := range sessions {
+		if nowMs-s.UpdatedAt < 60*60*1000 {
+			return "IDLE"
+		}
 	}
-	if anyRecentIdle {
-		return "IDLE", 0
-	}
-	return "OFFLINE", 0
+	return "OFFLINE"
 }
 
 func formatDuration(d time.Duration) string {

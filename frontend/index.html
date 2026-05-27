@@ -10,63 +10,74 @@
   <div id="bar" style="--wails-draggable: drag">
     <div class="scanlines" aria-hidden="true"></div>
 
-    <div class="segment segment--brand">
-      <span class="bracket">[</span><span class="brand-text">CLAUDE</span><span class="bracket">]</span>
+    <!-- Brand -->
+    <div class="seg seg--brand">
+      <span class="bracket">[</span><span class="brand">CLAUDE</span><span class="bracket">]</span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment" id="seg-account">
-      <span class="lbl">ACCT:</span>
-      <span class="val" id="val-account">---</span>
+    <!-- Account cycler: ◀ MAIN [MAX] ▶ — click arrows to switch -->
+    <div class="seg seg--nodrag" id="seg-acct" title="Click ◀ ▶ to switch account">
+      <span class="arrow" id="btn-acct-prev">◀</span>
+      <span class="val" id="val-acct">---</span>
+      <span class="sub" id="val-sub">[---]</span>
+      <span class="arrow" id="btn-acct-next">▶</span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment" id="seg-weekly">
-      <span class="lbl">USAGE:</span>
-      <span class="val" id="val-weekly-pct">0%</span>
-      <span class="prog" id="val-progress" aria-label="usage bar">
+    <!-- Msgs this billing period -->
+    <div class="seg" id="seg-msgs">
+      <span class="lbl">MSGS:</span>
+      <span class="val" id="val-msgs">---</span>
+      <!-- progress bar only shown when limit is configured -->
+      <span class="prog" id="prog-wrap">
         <span class="prog-fill" id="prog-fill"></span><span class="prog-empty" id="prog-empty"></span>
       </span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment">
+    <!-- Reset countdown -->
+    <div class="seg">
       <span class="lbl">RESET:</span>
-      <span class="val" id="val-reset">--D --H</span>
+      <span class="val" id="val-reset">---</span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment">
-      <span class="lbl">MODEL:</span>
+    <!-- Primary model -->
+    <div class="seg">
       <span class="val" id="val-model">---</span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment">
-      <span class="lbl">TODAY:</span>
-      <span class="val" id="val-today">0</span>
+    <!-- Last data point (stats-cache lags; shows most recent day) -->
+    <div class="seg" id="seg-last" title="Messages on the last computed day">
+      <span class="lbl" id="lbl-last">---:</span>
+      <span class="val" id="val-last">---</span>
     </div>
 
     <div class="sep">│</div>
 
-    <div class="segment" id="seg-status">
-      <span class="lbl">STATUS:</span>
+    <!-- Session status -->
+    <div class="seg" id="seg-status">
       <span class="val" id="val-status">OFFLINE</span>
       <span class="cursor blink">▋</span>
     </div>
 
     <div class="spacer"></div>
 
-    <div class="segment segment--actions" style="--wails-draggable: no-drag">
-      <span class="action-btn" id="btn-prev" title="Previous account">◀</span>
-      <span class="val" id="val-acct-sub" title="Subscription type">---</span>
-      <span class="action-btn" id="btn-next" title="Next account">▶</span>
+    <!-- Monitor cycler: ◀ MON 1 ▶ — click arrows to move bar between screens -->
+    <div class="seg seg--nodrag" id="seg-mon" title="Click ◀ ▶ to move bar to another screen">
+      <span class="arrow" id="btn-mon-prev">◀</span>
+      <span class="lbl">MON</span>
+      <span class="val" id="val-mon">1</span>
+      <span class="arrow" id="btn-mon-next">▶</span>
     </div>
+
   </div>
 
   <script src="./src/main.js" type="module"></script>

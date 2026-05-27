@@ -18,7 +18,6 @@ import (
 // Version is set via -ldflags "-X main.Version=x.y.z" at build time.
 var Version = "dev"
 
-// App is the central struct; all Wails-exported methods live here.
 type App struct {
 	ctx      context.Context
 	cfg      *config.Config
@@ -42,7 +41,6 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) domReady(ctx context.Context) {
-	// Brief settle so Wails window is visible before we look for the HWND.
 	time.Sleep(300 * time.Millisecond)
 
 	hwnd, err := syswin.FindWindowByPID()
@@ -54,22 +52,28 @@ func (a *App) domReady(ctx context.Context) {
 	}
 
 	a.monitors = syswin.GetMonitors()
-
-	// Clamp stored monitor index to reality
 	if a.cfg.Monitor >= len(a.monitors) {
 		a.cfg.Monitor = 0
 	}
 
 	if a.hwnd != 0 && len(a.monitors) > 0 {
-		syswin.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight)
+		syswin.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight, a.cfg.AppBarMode)
 		syswin.SetOpacity(a.hwnd, a.cfg.Opacity)
 		if a.cfg.ClickThrough {
 			syswin.SetClickThrough(a.hwnd, true)
 		}
 	}
 
-	// Start tray
 	go a.runTray()
+}
+
+func (a *App) shutdown(ctx context.Context) {
+	if a.hwnd != 0 {
+		syswin.RemoveAppBar(a.hwnd)
+	}
+	if a.trayMgr != nil {
+		a.trayMgr.Quit()
+	}
 }
 
 func (a *App) runTray() {
@@ -107,7 +111,6 @@ func (a *App) handleTrayEvents() {
 
 // ── Wails-exported bindings ──────────────────────────────────────────────────
 
-// GetBarData reads and computes the active account's display metrics.
 func (a *App) GetBarData() (*claude.BarData, error) {
 	if len(a.cfg.Accounts) == 0 {
 		return nil, fmt.Errorf("no accounts configured")
@@ -126,28 +129,30 @@ func (a *App) GetBarData() (*claude.BarData, error) {
 	return claude.ComputeBarData(
 		acc.Name,
 		sc, creds, sessions, notifs,
-		a.cfg.WeeklyTokenLimit,
+		a.cfg.WeeklyMsgLimit,
 		a.cfg.BillingResetDay,
 	), nil
 }
 
-// GetConfig returns a copy of the current configuration.
 func (a *App) GetConfig() config.Config {
 	return *a.cfg
 }
 
-// SaveConfig persists a new configuration and re-docks if the monitor changed.
 func (a *App) SaveConfig(cfg config.Config) error {
 	prevMonitor := a.cfg.Monitor
+	prevAppBar := a.cfg.AppBarMode
 	a.cfg = &cfg
 	if err := config.Save(a.cfg); err != nil {
 		return err
 	}
 	if a.hwnd != 0 {
-		if cfg.Monitor != prevMonitor {
+		if cfg.Monitor != prevMonitor || cfg.AppBarMode != prevAppBar {
+			if prevAppBar {
+				syswin.RemoveAppBar(a.hwnd)
+			}
 			a.monitors = syswin.GetMonitors()
 			if cfg.Monitor < len(a.monitors) {
-				syswin.DockToMonitor(a.hwnd, a.monitors[cfg.Monitor], cfg.BarHeight)
+				syswin.DockToMonitor(a.hwnd, a.monitors[cfg.Monitor], cfg.BarHeight, cfg.AppBarMode)
 			}
 		}
 		syswin.SetOpacity(a.hwnd, cfg.Opacity)
@@ -156,13 +161,11 @@ func (a *App) SaveConfig(cfg config.Config) error {
 	return nil
 }
 
-// GetMonitors returns all currently connected monitors.
 func (a *App) GetMonitors() []syswin.MonitorInfo {
 	a.monitors = syswin.GetMonitors()
 	return a.monitors
 }
 
-// SetActiveAccount switches which account's data is displayed.
 func (a *App) SetActiveAccount(index int) error {
 	if index < 0 || index >= len(a.cfg.Accounts) {
 		return fmt.Errorf("account index %d out of range", index)
@@ -178,18 +181,20 @@ func (a *App) SetActiveAccount(index int) error {
 	return nil
 }
 
-// SetMonitor moves the bar to the given monitor index and persists the choice.
 func (a *App) SetMonitor(index int) error {
 	a.monitors = syswin.GetMonitors()
 	if index < 0 || index >= len(a.monitors) {
 		return fmt.Errorf("monitor index %d out of range", index)
+	}
+	if a.hwnd != 0 && a.cfg.AppBarMode {
+		syswin.RemoveAppBar(a.hwnd)
 	}
 	a.cfg.Monitor = index
 	if err := config.Save(a.cfg); err != nil {
 		return err
 	}
 	if a.hwnd != 0 {
-		syswin.DockToMonitor(a.hwnd, a.monitors[index], a.cfg.BarHeight)
+		syswin.DockToMonitor(a.hwnd, a.monitors[index], a.cfg.BarHeight, a.cfg.AppBarMode)
 	}
 	if a.trayMgr != nil {
 		a.trayMgr.SetMonitorChecked(index)
@@ -198,7 +203,6 @@ func (a *App) SetMonitor(index int) error {
 	return nil
 }
 
-// ToggleClickThrough flips click-through mode and returns the new state.
 func (a *App) ToggleClickThrough() bool {
 	a.cfg.ClickThrough = !a.cfg.ClickThrough
 	if a.hwnd != 0 {
@@ -208,7 +212,6 @@ func (a *App) ToggleClickThrough() bool {
 	return a.cfg.ClickThrough
 }
 
-// SetOpacity updates window opacity and persists it.
 func (a *App) SetOpacity(opacity float64) error {
 	a.cfg.Opacity = opacity
 	if a.hwnd != 0 {
@@ -217,7 +220,6 @@ func (a *App) SetOpacity(opacity float64) error {
 	return config.Save(a.cfg)
 }
 
-// GetVersion returns the embedded build version string.
 func (a *App) GetVersion() string {
 	return Version
 }

@@ -1,112 +1,149 @@
 import './style.css';
 import {
   GetBarData, GetConfig, SetActiveAccount,
-  GetMonitors, ToggleClickThrough, GetVersion
+  GetMonitors, SetMonitor, ToggleClickThrough, GetVersion
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
-const BAR_CHARS = 10;
+const BAR_CHARS = 9;
+
+// Format message count: 90543 → "90.5K", 1234 → "1.2K", 150 → "150"
+function fmtMsgs(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(n);
+}
 
 function renderProgress(pct) {
   const filled = Math.min(BAR_CHARS, Math.round(pct * BAR_CHARS));
-  const empty = BAR_CHARS - filled;
-  return {
-    fill:  '█'.repeat(filled),
-    empty: '░'.repeat(empty),
-  };
+  const empty  = BAR_CHARS - filled;
+  return { fill: '█'.repeat(filled), empty: '░'.repeat(empty) };
 }
 
-function shortSub(sub) {
-  if (!sub) return '';
-  const s = sub.toUpperCase();
-  if (s === 'MAX') return 'MAX';
-  if (s === 'PRO') return 'PRO';
-  return s.slice(0, 4);
-}
-
-let config = null;
-let accountNames = [];
-let numMonitors = 1;
+// State
+let cfg        = null;
+let monitors   = [];
+let refreshId  = null;
 
 async function refresh() {
   try {
     const data = await GetBarData();
     if (!data) return;
 
-    document.getElementById('val-account').textContent =
+    // Account + subscription
+    document.getElementById('val-acct').textContent =
       (data.accountName || '---').toUpperCase();
+    const sub = data.subscriptionType || '';
+    document.getElementById('val-sub').textContent  = sub ? `[${sub}]` : '';
 
-    const pct = data.weeklyPercent || 0;
-    document.getElementById('val-weekly-pct').textContent =
-      Math.round(pct * 100) + '%';
+    // Messages this billing period
+    const msgs = data.periodMessages || 0;
+    document.getElementById('val-msgs').textContent = fmtMsgs(msgs);
 
-    const p = renderProgress(pct);
-    document.getElementById('prog-fill').textContent  = p.fill;
-    document.getElementById('prog-empty').textContent = p.empty;
+    // Progress bar — only when a limit is configured
+    const progWrap = document.getElementById('prog-wrap');
+    if (data.periodMsgLimit > 0) {
+      const p = renderProgress(data.periodPercent || 0);
+      document.getElementById('prog-fill').textContent  = p.fill;
+      document.getElementById('prog-empty').textContent = p.empty;
+      progWrap.style.display = '';
+    } else {
+      progWrap.style.display = 'none';
+    }
 
-    document.getElementById('val-reset').textContent  = data.resetIn || '---';
-    document.getElementById('val-model').textContent  = data.primaryModel || '---';
-    document.getElementById('val-today').textContent  = String(data.todayMessages || 0);
-    document.getElementById('val-status').textContent = data.status || 'OFFLINE';
-    document.getElementById('val-acct-sub').textContent = shortSub(data.subscriptionType);
+    // Warning at >90% or limit already exceeded
+    const warn = data.limitExceeded || (data.periodMsgLimit > 0 && (data.periodPercent || 0) >= 0.9);
+    document.getElementById('seg-msgs').classList.toggle('warn', warn);
 
-    // Warning class at >90%
-    document.getElementById('seg-weekly').classList.toggle('warn', pct >= 0.9);
+    // Reset countdown
+    document.getElementById('val-reset').textContent = data.resetIn || '---';
 
-    // Status class
+    // Model
+    document.getElementById('val-model').textContent = data.primaryModel || '---';
+
+    // Last data day
+    const lbl = data.lastDataLabel || '---';
+    document.getElementById('lbl-last').textContent = lbl + ':';
+    document.getElementById('val-last').textContent =
+      data.lastDataMsgs ? fmtMsgs(data.lastDataMsgs) : '0';
+
+    // Status
+    const status = (data.status || 'OFFLINE').toLowerCase();
+    document.getElementById('val-status').textContent = (data.status || 'OFFLINE');
     const segSt = document.getElementById('seg-status');
-    segSt.className = 'segment ' + (data.status || 'offline').toLowerCase();
+    segSt.className = 'seg ' + status;
 
   } catch (err) {
     console.error('refresh error:', err);
   }
 }
 
+async function updateMonitorDisplay() {
+  try {
+    cfg      = await GetConfig();
+    monitors = await GetMonitors();
+    document.getElementById('val-mon').textContent =
+      String((cfg.monitor || 0) + 1);
+  } catch (e) { /* ignore */ }
+}
+
 async function init() {
   try {
-    config = await GetConfig();
-    const monitors = await GetMonitors();
-    numMonitors = monitors.length;
+    cfg      = await GetConfig();
+    monitors = await GetMonitors();
 
-    if (config && config.accounts) {
-      accountNames = config.accounts.map(a => a.name);
-    }
-
-    const intervalMs = ((config && config.refreshSeconds) || 15) * 1000;
+    const intervalMs = ((cfg && cfg.refreshSeconds) || 15) * 1000;
     await refresh();
-    setInterval(refresh, intervalMs);
+    await updateMonitorDisplay();
 
-    // Wails events from Go
-    EventsOn('config:changed', refresh);
+    refreshId = setInterval(refresh, intervalMs);
+
+    EventsOn('config:changed',  refresh);
     EventsOn('account:changed', refresh);
-    EventsOn('monitor:changed', () => {});
+    EventsOn('monitor:changed', updateMonitorDisplay);
 
   } catch (err) {
     console.error('init error:', err);
   }
 }
 
-// Account cycling buttons
-document.getElementById('btn-prev').addEventListener('click', async () => {
+// ── Account cycling ──────────────────────────────────────────────────────────
+
+async function cycleAccount(dir) {
   try {
-    config = await GetConfig();
-    const total = (config.accounts || []).length;
-    const next = ((config.activeAccount || 0) - 1 + total) % total;
+    cfg = await GetConfig();
+    const total = (cfg.accounts || []).length;
+    if (total < 2) return;
+    const next = ((cfg.activeAccount || 0) + dir + total) % total;
     await SetActiveAccount(next);
-    config.activeAccount = next;
+    cfg.activeAccount = next;
     await refresh();
   } catch (e) { console.error(e); }
-});
+}
 
-document.getElementById('btn-next').addEventListener('click', async () => {
+document.getElementById('btn-acct-prev').addEventListener('click', () => cycleAccount(-1));
+document.getElementById('btn-acct-next').addEventListener('click', () => cycleAccount(+1));
+
+// Also allow clicking the account name itself to cycle forward
+document.getElementById('val-acct').style.cursor = 'pointer';
+document.getElementById('val-acct').addEventListener('click', () => cycleAccount(+1));
+
+// ── Monitor cycling ──────────────────────────────────────────────────────────
+
+async function cycleMon(dir) {
   try {
-    config = await GetConfig();
-    const total = (config.accounts || []).length;
-    const next = ((config.activeAccount || 0) + 1) % total;
-    await SetActiveAccount(next);
-    config.activeAccount = next;
-    await refresh();
+    cfg      = await GetConfig();
+    monitors = await GetMonitors();
+    const total = monitors.length;
+    if (total < 2) return;
+    const next = ((cfg.monitor || 0) + dir + total) % total;
+    await SetMonitor(next);
+    cfg.monitor = next;
+    document.getElementById('val-mon').textContent = String(next + 1);
   } catch (e) { console.error(e); }
-});
+}
 
+document.getElementById('btn-mon-prev').addEventListener('click', () => cycleMon(-1));
+document.getElementById('btn-mon-next').addEventListener('click', () => cycleMon(+1));
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);

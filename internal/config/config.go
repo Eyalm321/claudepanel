@@ -21,7 +21,7 @@ type Config struct {
 	Theme            string          `json:"theme"`
 	Opacity          float64         `json:"opacity"`
 	RefreshSeconds   int             `json:"refreshSeconds"`
-	WeeklyTokenLimit int64           `json:"weeklyTokenLimit"`
+	WeeklyMsgLimit   int64           `json:"weeklyMsgLimit"`   // 0 = show raw count only
 	BillingResetDay  int             `json:"billingResetDay"`
 	BarHeight        int             `json:"barHeight"`
 	ActiveAccount    int             `json:"activeAccount"`
@@ -29,6 +29,7 @@ type Config struct {
 	Hotkeys          HotkeyConfig    `json:"hotkeys"`
 	StartWithWindows bool            `json:"startWithWindows"`
 	ClickThrough     bool            `json:"clickThrough"`
+	AppBarMode       bool            `json:"appBarMode"` // push apps down (AppBar API)
 }
 
 func AppDataDir() string {
@@ -53,10 +54,11 @@ func Defaults() Config {
 		Theme:            "terminal-green",
 		Opacity:          0.92,
 		RefreshSeconds:   15,
-		WeeklyTokenLimit: 20_000_000,
+		WeeklyMsgLimit:   0, // 0 = show raw count; set e.g. 150000 for Max plan
 		BillingResetDay:  1,
 		BarHeight:        28,
 		ActiveAccount:    0,
+		AppBarMode:       true,
 		Accounts: []AccountConfig{
 			{Name: "main", Path: filepath.Join(userProfile, ".claude")},
 			{Name: "alt", Path: filepath.Join(userProfile, ".claude-alt")},
