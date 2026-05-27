@@ -1,14 +1,14 @@
+<p align="center"><img src="logo.png" alt="ClaudePanel logo" width="160" /></p>
+
 # 👾 ClaudePanel
 
 A highly customized, lightweight desktop utility bar for **Windows, macOS, and Linux** that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, cross-platform monospace typography, and an interactive headless YouTube audio stream (Claude FM).
 
 ![ClaudePanel Screenshot](screenshot.png)
 
-```
-👾 │ ACCT: MAIN [PRO] │ WEEKLY: 71% ░░░░░░··· │ RESET: 4D 18H │ OPUS │ IDLE │ CLAUDE FM [ON] · VOL 120%
-```
+![Bar layout](bar.png)
 
-Always-on-top · Frameless · Multi-monitor Dock · Click-through mode · System tray · Multi-account · ~30 MB RAM
+Always-on-top · Frameless · Multi-monitor Dock · Pin / auto-hide on hover · Click-through mode · System tray · Multi-account · ~30 MB RAM
 
 ---
 
@@ -25,6 +25,13 @@ A resident tray icon gives one-click access to all controls without the bar need
 
 ### Click-through mode
 When enabled, mouse events pass straight through the bar to whatever is behind it — ideal for full-screen workflows. Toggle via the tray or Settings. (Linux Wayland: click-through is not yet implemented at v1.)
+
+### Pin / auto-hide on hover
+A pin icon to the right of the THEME segment toggles between two states:
+- **Pinned** (orange, tilted): bar is docked and permanently visible — the default on every launch.
+- **Unpinned** (gray, upright): bar slides up off the top of the screen and disappears. Move the cursor to the top edge of its monitor and it slides back down (Go-side cursor polling at 80 ms — WebView2 `mouseleave` is unreliable on a 28 px window). A 200 ms grace period prevents accidental dismissal on cursor overshoot.
+
+The slide is driven by animating the OS window's Y position (~60 fps ease-out cubic), with a `SetWindowRgn` clip that masks out any portion that would otherwise spill onto a monitor sitting above. (Windows only at v1; on macOS / Linux the toggle still affects the docked-vs-floating state but the slide animation is a no-op.)
 
 ### Start on login
 Registers ClaudePanel to launch at login via the OS-native mechanism: **Windows** Registry (`HKCU\...\Run`), **macOS** LaunchAgent plist, **Linux** XDG autostart `.desktop` file.
