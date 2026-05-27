@@ -12,8 +12,7 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-//go:embed build/windows/icon.ico
-var trayIconBytes []byte
+// trayIconBytes is defined per-OS in icon_{windows,darwin,linux}.go.
 
 func main() {
 	app := NewApp()

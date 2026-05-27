@@ -1,0 +1,69 @@
+#!/bin/bash
+# postinstall — invoked by `installer` (pkg) after files are placed.
+# Runs as root with $USER set to the GUI logged-in user. We sudo back to that
+# user so the change to ~/.claude/settings.json lands in the right home dir
+# with the right ownership.
+
+set -u
+
+TARGET_USER="${USER:-$(stat -f '%Su' /dev/console 2>/dev/null || echo '')}"
+if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
+    echo "ClaudeBar postinstall: could not determine GUI user; skipping statusline configuration."
+    exit 0
+fi
+
+USER_HOME=$(/usr/bin/dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+if [ -z "$USER_HOME" ] || [ ! -d "$USER_HOME" ]; then
+    USER_HOME=$(eval echo "~$TARGET_USER")
+fi
+
+SETTINGS_PATH="$USER_HOME/.claude/settings.json"
+
+/usr/bin/sudo -u "$TARGET_USER" /usr/bin/python3 - "$SETTINGS_PATH" install <<'PYEOF'
+import json, os, sys, tempfile
+
+path = sys.argv[1]
+mode = sys.argv[2]
+
+STATUSLINE_CMD = (
+    "node -e \"const fs=require('fs');const p=require('path');const os=require('os');"
+    "const d=fs.readFileSync(0,'utf-8');if(d){const parsed=JSON.parse(d);"
+    "fs.writeFileSync(p.join(os.homedir(),'.claude','rate_limits.json'),"
+    "JSON.stringify({...parsed,captured_at:Date.now()}))}\""
+)
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
+
+settings = {}
+if os.path.exists(path):
+    try:
+        with open(path, "r") as f:
+            data = f.read().strip()
+            settings = json.loads(data) if data else {}
+        if not isinstance(settings, dict):
+            print(f"ClaudeBar: {path} is not a JSON object; skipping.", file=sys.stderr)
+            sys.exit(0)
+    except json.JSONDecodeError as e:
+        print(f"ClaudeBar: {path} is not valid JSON ({e}); skipping.", file=sys.stderr)
+        sys.exit(0)
+
+if mode == "install":
+    settings["statuslineCommand"] = STATUSLINE_CMD
+elif mode == "uninstall":
+    settings.pop("statuslineCommand", None)
+
+tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".settings.", suffix=".tmp")
+try:
+    with os.fdopen(tmp_fd, "w") as f:
+        json.dump(settings, f, indent=2)
+    os.replace(tmp_path, path)
+    print(f"ClaudeBar: statusline {mode} complete ({path})")
+except Exception as e:
+    try:
+        os.unlink(tmp_path)
+    except OSError:
+        pass
+    raise
+PYEOF
+
+exit 0

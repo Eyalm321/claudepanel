@@ -1,4 +1,6 @@
-package syswin
+//go:build windows
+
+package platform
 
 import (
 	"syscall"
@@ -22,26 +24,12 @@ type rect32 struct {
 	Left, Top, Right, Bottom int32
 }
 
-// monitorInfoEx is the MONITORINFOEX Win32 struct.
 type monitorInfoEx struct {
 	cbSize    uint32
 	rcMonitor rect32
 	rcWork    rect32
 	dwFlags   uint32
 	szDevice  [32]uint16
-}
-
-// MonitorInfo is the app-facing monitor descriptor.
-type MonitorInfo struct {
-	Index     int     `json:"index"`
-	Left      int32   `json:"left"`      // physical pixels
-	Top       int32   `json:"top"`       // physical pixels
-	Width     int     `json:"width"`     // logical pixels
-	Height    int     `json:"height"`    // logical pixels
-	PhysWidth int     `json:"physWidth"` // physical pixels (use for Win32 sizing calls)
-	DpiScale  float64 `json:"dpiScale"`  // e.g. 1.25 at 125%
-	IsPrimary bool    `json:"isPrimary"`
-	Name      string  `json:"name"`
 }
 
 var enumResults []MonitorInfo
@@ -76,7 +64,6 @@ func enumMonitorProc(hMonitor, _ uintptr, _ uintptr, _ uintptr) uintptr {
 	return 1
 }
 
-// GetMonitors returns all connected monitors ordered by index.
 func GetMonitors() []MonitorInfo {
 	enumResults = nil
 	cb := syscall.NewCallback(enumMonitorProc)

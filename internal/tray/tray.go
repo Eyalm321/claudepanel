@@ -91,10 +91,10 @@ func (m *Manager) SetStartup(enabled bool) {
 		return
 	}
 	if enabled {
-		m.startupItem.SetTitle("Start with Windows: ON")
+		m.startupItem.SetTitle("Start on login: ON")
 		m.startupItem.Check()
 	} else {
-		m.startupItem.SetTitle("Start with Windows: OFF")
+		m.startupItem.SetTitle("Start on login: OFF")
 		m.startupItem.Uncheck()
 	}
 }
@@ -149,8 +149,8 @@ func (m *Manager) onReady(iconBytes []byte, version string, accountNames []strin
 		}
 	}()
 
-	// Start with Windows toggle
-	m.startupItem = systray.AddMenuItem("Start with Windows: OFF", "Launch on login")
+	// Start-on-login toggle
+	m.startupItem = systray.AddMenuItem("Start on login: OFF", "Launch on login")
 	go func() {
 		for range m.startupItem.ClickedCh {
 			m.events <- Event{Type: EventToggleStartup}

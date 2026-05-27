@@ -1,0 +1,46 @@
+# nfpm config for building .deb and .rpm packages.
+# Build with:
+#   nfpm package -f build/linux/nfpm.yaml -p deb -t ./dist
+#   nfpm package -f build/linux/nfpm.yaml -p rpm -t ./dist
+#
+# Assumes the Linux binary has already been produced at build/bin/claudebar
+# by `wails build -platform linux/amd64`.
+
+name: claudebar
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: ClaudeBar <noreply@example.com>
+description: |
+  Lightweight always-on-top desktop bar that displays Claude Code usage
+  across multiple accounts with a retro terminal aesthetic.
+vendor: ClaudeBar
+homepage: https://github.com/anthropics/claudebar
+license: MIT
+
+depends:
+  - libwebkit2gtk-4.0-37 | libwebkit2gtk-4.1-0
+  - libgtk-3-0
+  - wmctrl
+  - x11-utils    # provides xprop
+  - xdotool
+  - python3
+
+recommends:
+  - nodejs       # required for the statusline command to run
+
+contents:
+  - src: ./build/bin/claudebar
+    dst: /usr/bin/claudebar
+    file_info:
+      mode: 0755
+  - src: ./build/linux/claudebar.desktop
+    dst: /usr/share/applications/claudebar.desktop
+  - src: ./build/linux/icon.png
+    dst: /usr/share/icons/hicolor/256x256/apps/claudebar.png
+
+scripts:
+  postinstall: ./build/linux/scripts/postinstall.sh
+  preremove: ./build/linux/scripts/preremove.sh

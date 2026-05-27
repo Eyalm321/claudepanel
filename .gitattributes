@@ -1,0 +1,25 @@
+# Shell scripts and macOS pkg/AppImage helpers MUST use LF on disk —
+# bash refuses to parse CRLF shebangs. Same for .desktop entries and
+# YAML consumed by Linux tooling.
+*.sh         text eol=lf
+build/darwin/scripts/postinstall    text eol=lf
+build/darwin/scripts/preuninstall   text eol=lf
+build/linux/AppRun                  text eol=lf
+build/linux/*.yaml                  text eol=lf
+build/linux/*.desktop               text eol=lf
+
+# Source files — let Git decide per-platform.
+*.go         text
+*.md         text
+*.json       text
+*.yaml       text
+*.yml        text
+*.ps1        text
+*.nsi        text
+*.nsh        text
+
+# Binary assets — never normalize.
+*.png        binary
+*.icns       binary
+*.ico        binary
+*.exe        binary

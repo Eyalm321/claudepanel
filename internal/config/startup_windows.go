@@ -1,3 +1,5 @@
+//go:build windows
+
 package config
 
 import "golang.org/x/sys/windows/registry"
@@ -7,7 +9,7 @@ const (
 	startupAppName = "ClaudeBar"
 )
 
-func SetStartWithWindows(enabled bool, exePath string) error {
+func SetStartOnLogin(enabled bool, exePath string) error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, startupRegKey,
 		registry.SET_VALUE|registry.QUERY_VALUE)
 	if err != nil {
@@ -20,7 +22,7 @@ func SetStartWithWindows(enabled bool, exePath string) error {
 	return key.DeleteValue(startupAppName)
 }
 
-func IsStartWithWindows() bool {
+func IsStartOnLogin() bool {
 	key, err := registry.OpenKey(registry.CURRENT_USER, startupRegKey, registry.QUERY_VALUE)
 	if err != nil {
 		return false

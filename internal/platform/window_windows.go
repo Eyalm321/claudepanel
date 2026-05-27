@@ -1,4 +1,6 @@
-package syswin
+//go:build windows
+
+package platform
 
 import (
 	"fmt"
@@ -23,26 +25,25 @@ var (
 )
 
 const (
-	gwlStyle        = uintptr(0xFFFFFFF0) // -16
-	gwlExStyle      = uintptr(0xFFFFFFEC) // -20
-	wsCaption       = uintptr(0x00C00000)
-	wsThickframe    = uintptr(0x00040000)
-	wsMinimizebox   = uintptr(0x00020000)
-	wsMaximizebox   = uintptr(0x00010000)
-	wsSysmenu       = uintptr(0x00080000)
-	wsExToolwindow  = uintptr(0x00000080)
-	wsExLayered     = uintptr(0x00080000)
-	wsExTransparent = uintptr(0x00000020)
-	hwndTopmost     = ^uintptr(0) // (HWND)(-1)
+	gwlStyle          = uintptr(0xFFFFFFF0) // -16
+	gwlExStyle        = uintptr(0xFFFFFFEC) // -20
+	wsCaption         = uintptr(0x00C00000)
+	wsThickframe      = uintptr(0x00040000)
+	wsMinimizebox     = uintptr(0x00020000)
+	wsMaximizebox     = uintptr(0x00010000)
+	wsSysmenu         = uintptr(0x00080000)
+	wsExToolwindow    = uintptr(0x00000080)
+	wsExLayered       = uintptr(0x00080000)
+	wsExTransparent   = uintptr(0x00000020)
+	hwndTopmost       = ^uintptr(0) // (HWND)(-1)
 	swpNoactivate     = uintptr(0x0010)
 	swpShowwindow     = uintptr(0x0040)
 	swpNosize         = uintptr(0x0001)
 	swpNomove         = uintptr(0x0002)
 	swpFramechanged   = uintptr(0x0020)
-	swpNosendchanging = uintptr(0x0400) // bypass WM_WINDOWPOSCHANGING veto
-	lwaAlpha        = uintptr(0x2)
+	swpNosendchanging = uintptr(0x0400)
+	lwaAlpha          = uintptr(0x2)
 
-	// AppBar constants
 	abmNew      = uintptr(0x00000000)
 	abmRemove   = uintptr(0x00000001)
 	abmQuerypos = uintptr(0x00000002)
@@ -50,17 +51,15 @@ const (
 	abeTop      = uint32(1)
 )
 
-// appBarData mirrors the Win32 APPBARDATA struct.
 type appBarData struct {
-	cbSize   uint32
-	hWnd     uintptr
-	uMsg     uint32
-	uEdge    uint32
-	rc       rect32
-	lParam   uintptr
+	cbSize uint32
+	hWnd   uintptr
+	uMsg   uint32
+	uEdge  uint32
+	rc     rect32
+	lParam uintptr
 }
 
-// FindWindowByPID finds a visible window belonging to this process.
 func FindWindowByPID() (uintptr, error) {
 	pid := uint32(os.Getpid())
 	var found uintptr
@@ -83,7 +82,6 @@ func FindWindowByPID() (uintptr, error) {
 	return found, nil
 }
 
-// ApplyBarStyles strips chrome, marks as tool window, and enables layered compositing.
 func ApplyBarStyles(hwnd uintptr) {
 	style, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlStyle)
 	style &^= wsCaption | wsThickframe | wsMinimizebox | wsMaximizebox | wsSysmenu
@@ -97,20 +95,14 @@ func ApplyBarStyles(hwnd uintptr) {
 		swpNoactivate|swpNosize|swpNomove|swpFramechanged)
 }
 
-// DockToMonitor positions the bar at the top edge of the given monitor.
-// If appBarMode is true it also registers as a Windows AppBar so maximised
-// apps push below the bar instead of appearing underneath it.
 func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
 	physW := mon.PhysWidth
 	if physW == 0 {
 		physW = mon.Width
 	}
-
 	if appBarMode {
 		registerAppBar(hwnd, mon, barHeight, physW)
 	}
-	// SWP_NOSENDCHANGING bypasses any WM_WINDOWPOSCHANGING handler that
-	// would otherwise veto our height change (Wails enforces MinHeight/MaxHeight).
 	procSetWindowPos.Call(
 		hwnd, hwndTopmost,
 		uintptr(mon.Left), uintptr(mon.Top),
@@ -119,8 +111,6 @@ func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool
 	)
 }
 
-// RemoveAppBar releases the Windows AppBar reservation for the given window.
-// Call on app exit or before moving to a different monitor.
 func RemoveAppBar(hwnd uintptr) {
 	abd := appBarData{
 		cbSize: uint32(unsafe.Sizeof(appBarData{})),
@@ -147,14 +137,12 @@ func registerAppBar(hwnd uintptr, mon MonitorInfo, barHeight, physW int) {
 	procSHAppBarMsg.Call(abmSetpos, uintptr(unsafe.Pointer(&abd)))
 }
 
-// GetWindowSize returns the window's physical pixel dimensions.
 func GetWindowSize(hwnd uintptr) (left, top, width, height int) {
 	var wr rect32
 	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
 	return int(wr.Left), int(wr.Top), int(wr.Right - wr.Left), int(wr.Bottom - wr.Top)
 }
 
-// SetWindowHeight forces the window to a specific physical pixel height.
 func SetWindowHeight(hwnd uintptr, physHeight int) {
 	var wr rect32
 	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
@@ -167,7 +155,6 @@ func SetWindowHeight(hwnd uintptr, physHeight int) {
 	)
 }
 
-// SetOpacity controls window transparency via WS_EX_LAYERED (0.0–1.0).
 func SetOpacity(hwnd uintptr, opacity float64) {
 	if opacity < 0 {
 		opacity = 0
@@ -179,7 +166,6 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 	procSetLayeredWindowAttributes.Call(hwnd, 0, alpha, lwaAlpha)
 }
 
-// SetClickThrough toggles WS_EX_TRANSPARENT so mouse events pass through.
 func SetClickThrough(hwnd uintptr, enabled bool) {
 	exStyle, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlExStyle)
 	if enabled {

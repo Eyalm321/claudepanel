@@ -1,0 +1,159 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact: claudebar-windows-installer
+          - os: macos-latest
+            name: macOS
+            artifact: claudebar-macos-pkg
+          - os: ubuntu-latest
+            name: Linux
+            artifact: claudebar-linux
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "semver=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            echo "semver=0.0.0-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Windows ──
+      - name: Build Windows installer
+        if: matrix.os == 'windows-latest'
+        run: wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+
+      - name: Stage Windows artifact
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build\bin\claudebar-amd64-installer.exe dist\ClaudeBar-${{ steps.version.outputs.semver }}-windows-amd64-setup.exe
+
+      # ── macOS ──
+      - name: Build macOS app bundle
+        if: matrix.os == 'macos-latest'
+        run: wails build -platform darwin/universal -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+
+      - name: Build macOS .pkg
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p pkgroot/Applications
+          cp -R build/bin/ClaudeBar.app pkgroot/Applications/
+          chmod +x build/darwin/scripts/postinstall build/darwin/scripts/preuninstall
+          mkdir -p dist
+          pkgbuild \
+            --root pkgroot \
+            --install-location / \
+            --scripts build/darwin/scripts \
+            --identifier com.claudebar.pkg \
+            --version "${{ steps.version.outputs.semver }}" \
+            "dist/ClaudeBar-${{ steps.version.outputs.semver }}-macos-universal.pkg"
+
+      # ── Linux ──
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config wget file
+
+      - name: Build Linux binary
+        if: matrix.os == 'ubuntu-latest'
+        run: wails build -platform linux/amd64 -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+
+      - name: Install nfpm
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl -sSfL https://github.com/goreleaser/nfpm/releases/download/v2.41.0/nfpm_2.41.0_Linux_x86_64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin nfpm
+
+      - name: Build .deb and .rpm
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          VERSION: ${{ steps.version.outputs.semver }}
+        run: |
+          mkdir -p dist
+          chmod +x build/linux/scripts/postinstall.sh build/linux/scripts/preremove.sh
+          # nfpm doesn't expand env vars in the YAML — substitute first.
+          sed "s/\${VERSION}/$VERSION/" build/linux/nfpm.yaml > nfpm.tmp.yaml
+          nfpm package -f nfpm.tmp.yaml -p deb -t dist/
+          nfpm package -f nfpm.tmp.yaml -p rpm -t dist/
+
+      - name: Build AppImage
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+          chmod +x build/linux/build-appimage.sh build/linux/AppRun
+          # appimagetool inside Docker / CI needs FUSE workaround:
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          OUT_DIR=$PWD/dist ./build/linux/build-appimage.sh
+
+      # ── Upload ──
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifact layout
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ \;
+          ls -la dist/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

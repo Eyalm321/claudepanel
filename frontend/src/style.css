@@ -9,11 +9,11 @@
   
   /* Claude Code Signature Accent Colors */
   --clay:          #d77757; /* Signature custom orange value highlight */
-  --green:         #34d399; /* Vibrant mint green */
+  --green:         #4fc64d; /* Dynamic terminal green */
   --red:           #f23959; /* Custom high usage warning red */
   
   /* Modern Terminal Typography */
-  --font:          'Cascadia Mono', 'Cascadia Code', 'Consolas', monospace;
+  --font:          'Cascadia Mono', 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', 'Fira Code', 'JetBrains Mono', 'DejaVu Sans Mono', 'Inconsolata', ui-monospace, monospace;
   --h:             28px;
 }
 
@@ -103,28 +103,89 @@ html, body {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
-.cursor {
-  display: none;
+
+/* Caret for Matrix Text */
+.cursor-text {
+  display: none; /* Hidden by default. Enabled ONLY in Matrix! */
   animation: blink 1s step-end infinite;
   color: var(--clay);
-  font-size: inherit; /* Use the exact font-size of the parent text */
-  margin: 0; /* Absolutely zero gap */
-  padding: 0;
-  vertical-align: baseline; /* Align perfectly with adjacent characters */
+  font-size: inherit;
+  margin-left: 0; /* Zero gap between blocks and caret */
+  vertical-align: baseline;
   line-height: inherit;
 }
 
-/* Enable cursor only for retro/terminal themes */
-#bar.theme-fallout .cursor,
-#bar.theme-amber .cursor,
-#bar.theme-matrix .cursor {
+/* Caret for Fallout Outlined Bar */
+.cursor-bar {
+  display: none; /* Hidden by default. Enabled ONLY in Fallout! */
+  position: absolute;
+  right: 0; /* Sits completely flush against right side border */
+  bottom: 0; /* Starts flush at the bottom of the container, over the border */
+  height: 10px; /* Stands 2px higher than the 8px container, matching the fill */
+  width: 8px; /* Bold solid red block caret width */
+  background: var(--red); /* Warning red block caret matching user's progress bar image */
+  animation: blink 1s step-end infinite;
+  box-sizing: border-box;
+}
+
+/* Enable cursors strictly for their respective themes */
+#bar.theme-matrix .cursor-text {
   display: inline-block;
 }
 
 /* ── Progress bar ── */
-.prog       { letter-spacing: -0.01em; margin-left: 2px; display: inline-flex; align-items: center; }
-.prog-fill  { color: var(--clay); }
-.prog-empty { color: rgba(107, 114, 128, 0.45); } /* Subtle gray for progress bar empty dots */
+.prog {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 1. Character-based blocks (Default: Claude, Amber, Matrix, Dracula) */
+.prog-text {
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: -0.01em;
+}
+.prog-fill {
+  color: var(--clay);
+}
+.prog-empty {
+  color: rgba(107, 114, 128, 0.45); /* Subtle gray empty dots */
+}
+
+/* 2. Solid Outlined Bar (Fallout ONLY) */
+.prog-bar {
+  width: 90px;
+  height: 8px; /* Sleek 8px container height */
+  border-bottom: 2px solid var(--clay); /* Outline bottom */
+  border-left: none; /* Left border completely missing! */
+  border-right: 2px solid var(--clay); /* Outline right */
+  border-top: none; /* Top border completely missing! */
+  background: transparent;
+  padding: 0; /* Absolutely zero gap between borders and fill! */
+  box-sizing: border-box;
+  display: none; /* Hidden by default. Enabled strictly in Fallout theme! */
+  border-radius: 0;
+  overflow: visible; /* Let the taller fill pop out of the top! */
+  position: relative;
+}
+.prog-bar-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0; /* Starts flush at bottom over the border */
+  height: 9px; /* 9px height (1px taller than container, making it stand out as 1px higher!) */
+  background: var(--clay);
+  display: block;
+  width: 0%; /* Dynamic */
+  transition: width 0.3s ease;
+}
+
+/* Toggle progress bar visibility depending on active theme class */
+#bar.theme-fallout .prog-text { display: none; }
+#bar.theme-fallout .prog-bar  { display: inline-block; }
+
+#bar.theme-matrix .prog-text  { display: inline-flex; }
+#bar.theme-matrix .prog-bar   { display: none; }
 
 /* ── Status classes ── */
 #seg-status.busy    .val { color: #b1b9f9; } /* Idle/busy lavender color */
@@ -134,13 +195,26 @@ html, body {
 /* ── Warning states ── */
 .warn-medium .val,
 .warn-medium .prog-fill,
-.warn-medium .cursor {
+.warn-medium .cursor-text {
   color: #eab308; /* Yellow warn for 85%+ */
 }
+.warn-medium .prog-bar {
+  border-color: #eab308;
+}
+.warn-medium .prog-bar-fill {
+  background: #eab308;
+}
+
 .warn-high .val,
 .warn-high .prog-fill,
-.warn-high .cursor {
+.warn-high .cursor-text {
   color: var(--red); /* Custom red #f23959 for 95%+ / limit exceeded */
+}
+.warn-high .prog-bar {
+  border-color: var(--red);
+}
+.warn-high .prog-bar-fill {
+  background: var(--red);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -166,7 +240,7 @@ html, body {
   --green:         #33ff33;
   --red:           #ff3333; /* Radioactive warning red */
 }
-#bar.theme-fallout .lbl { color: var(--text-muted); }
+#bar.theme-fallout .lbl { color: #2db32d; } /* Brightened Pip-Boy green labels */
 #bar.theme-fallout .sub { color: #88ff88; }
 #bar.theme-fallout .seg--brand .invader { fill: var(--text); filter: drop-shadow(0 0 2px var(--text)); }
 #bar.theme-fallout .arrow:hover { color: var(--text); }
@@ -185,7 +259,7 @@ html, body {
   --green:         #ffb000;
   --red:           #ff3300;
 }
-#bar.theme-amber .lbl { color: var(--text-muted); }
+#bar.theme-amber .lbl { color: #b37b00; } /* Brightened VT100 amber labels */
 #bar.theme-amber .sub { color: #ffd077; }
 #bar.theme-amber .seg--brand .invader { fill: var(--text); filter: drop-shadow(0 0 2px var(--text)); }
 #bar.theme-amber .arrow:hover { color: var(--text); }
@@ -204,7 +278,7 @@ html, body {
   --green:         #00ff00;
   --red:           #ff0000;
 }
-#bar.theme-matrix .lbl { color: var(--text-muted); }
+#bar.theme-matrix .lbl { color: #00b300; } /* Brightened digital rain green labels */
 #bar.theme-matrix .sub { color: #88ff88; }
 #bar.theme-matrix .seg--brand .invader { fill: var(--text); }
 #bar.theme-matrix .arrow:hover { color: var(--text); }
@@ -242,5 +316,60 @@ html, body {
   z-index: 10;
   pointer-events: none;
   opacity: 0.8;
+}
+
+/* ── Radio Segment & soundwave animations ── */
+#seg-radio {
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+#seg-radio:hover #radio-title,
+#seg-radio:hover #radio-vol-lbl {
+  color: var(--clay) !important;
+  opacity: 1 !important;
+}
+#seg-radio:hover #radio-status,
+#seg-radio:hover #radio-vol {
+  color: var(--text) !important;
+}
+
+.radio-title-wrap {
+  width: 75px;
+  overflow: hidden;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+#radio-title {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+#radio-title.marquee {
+  animation: marquee 8s linear infinite;
+}
+
+@keyframes marquee {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes soundwave {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; color: var(--green); }
+}
+
+#radio-status.playing {
+  animation: soundwave 1.5s ease infinite;
+  color: var(--green) !important;
+  opacity: 1 !important;
+  font-weight: bold;
+}
+#radio-status.loading {
+  color: var(--clay) !important;
+  font-weight: bold;
 }
 

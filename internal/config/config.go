@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 type AccountConfig struct {
@@ -21,7 +22,7 @@ type Config struct {
 	Theme            string          `json:"theme"`
 	Opacity          float64         `json:"opacity"`
 	RefreshSeconds   int             `json:"refreshSeconds"`
-	WeeklyMsgLimit   int64           `json:"weeklyMsgLimit"`   // 0 = show raw count only
+	WeeklyMsgLimit   int64           `json:"weeklyMsgLimit"` // 0 = show raw count only
 	BillingResetDay  int             `json:"billingResetDay"`
 	BarHeight        int             `json:"barHeight"`
 	ActiveAccount    int             `json:"activeAccount"`
@@ -33,11 +34,24 @@ type Config struct {
 }
 
 func AppDataDir() string {
-	base := os.Getenv("APPDATA")
-	if base == "" {
-		base = os.TempDir()
+	switch runtime.GOOS {
+	case "windows":
+		if v := os.Getenv("APPDATA"); v != "" {
+			return filepath.Join(v, "ClaudeBar")
+		}
+	case "darwin":
+		if h, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(h, "Library", "Application Support", "ClaudeBar")
+		}
+	default:
+		if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
+			return filepath.Join(v, "ClaudeBar")
+		}
+		if h, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(h, ".config", "ClaudeBar")
+		}
 	}
-	return filepath.Join(base, "ClaudeBar")
+	return filepath.Join(os.TempDir(), "ClaudeBar")
 }
 
 func configPath() string {
@@ -45,23 +59,23 @@ func configPath() string {
 }
 
 func Defaults() Config {
-	userProfile := os.Getenv("USERPROFILE")
-	if userProfile == "" {
-		userProfile = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
 	}
 	return Config{
-		Monitor:          0,
-		Theme:            "terminal-green",
-		Opacity:          0.92,
-		RefreshSeconds:   15,
-		WeeklyMsgLimit:   0, // 0 = show raw count; set e.g. 150000 for Max plan
-		BillingResetDay:  1,
-		BarHeight:        28,
-		ActiveAccount:    0,
-		AppBarMode:       true,
+		Monitor:         0,
+		Theme:           "terminal-green",
+		Opacity:         0.92,
+		RefreshSeconds:  15,
+		WeeklyMsgLimit:  0, // 0 = show raw count; set e.g. 150000 for Max plan
+		BillingResetDay: 1,
+		BarHeight:       28,
+		ActiveAccount:   0,
+		AppBarMode:      true,
 		Accounts: []AccountConfig{
-			{Name: "main", Path: filepath.Join(userProfile, ".claude")},
-			{Name: "alt", Path: filepath.Join(userProfile, ".claude-alt")},
+			{Name: "main", Path: filepath.Join(home, ".claude")},
+			{Name: "alt", Path: filepath.Join(home, ".claude-alt")},
 		},
 		Hotkeys: HotkeyConfig{
 			CycleMonitor:       "Ctrl+Alt+M",

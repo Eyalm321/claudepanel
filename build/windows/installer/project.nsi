@@ -88,17 +88,27 @@ Section
 
     !insertmacro wails.files
 
+    # Statusline configuration script (kept alongside the .exe for use on uninstall too)
+    File "configure-statusline.ps1"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
+    # Auto-configure Claude Code's statusline so live usage capture works out of the box.
+    # Runs as the installing user so $env:USERPROFILE resolves correctly.
+    nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\configure-statusline.ps1" install'
+
     !insertmacro wails.writeUninstaller
 SectionEnd
 
 Section "uninstall"
     !insertmacro wails.setShellContext
+
+    # Undo the statusline configuration before deleting the script.
+    nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\configure-statusline.ps1" uninstall'
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 

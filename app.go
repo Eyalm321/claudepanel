@@ -10,7 +10,7 @@ import (
 
 	"claudebar/internal/claude"
 	"claudebar/internal/config"
-	"claudebar/internal/syswin"
+	"claudebar/internal/platform"
 	"claudebar/internal/tray"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -22,7 +22,7 @@ var Version = "dev"
 type App struct {
 	ctx      context.Context
 	cfg      *config.Config
-	monitors []syswin.MonitorInfo
+	monitors []platform.MonitorInfo
 	hwnd     uintptr
 	trayMgr  *tray.Manager
 }
@@ -52,24 +52,24 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) domReady(ctx context.Context) {
 	time.Sleep(300 * time.Millisecond)
 
-	hwnd, err := syswin.FindWindowByPID()
+	hwnd, err := platform.FindWindowByPID()
 	if err != nil {
 		log.Printf("HWND lookup failed: %v", err)
 	} else {
 		a.hwnd = hwnd
-		syswin.ApplyBarStyles(hwnd)
+		platform.ApplyBarStyles(hwnd)
 	}
 
-	a.monitors = syswin.GetMonitors()
+	a.monitors = platform.GetMonitors()
 	if a.cfg.Monitor >= len(a.monitors) {
 		a.cfg.Monitor = 0
 	}
 
 	if a.hwnd != 0 && len(a.monitors) > 0 {
-		syswin.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight, a.cfg.AppBarMode)
-		syswin.SetOpacity(a.hwnd, a.cfg.Opacity)
+		platform.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight, a.cfg.AppBarMode)
+		platform.SetOpacity(a.hwnd, a.cfg.Opacity)
 		if a.cfg.ClickThrough {
-			syswin.SetClickThrough(a.hwnd, true)
+			platform.SetClickThrough(a.hwnd, true)
 		}
 	}
 
@@ -78,7 +78,7 @@ func (a *App) domReady(ctx context.Context) {
 
 func (a *App) shutdown(ctx context.Context) {
 	if a.hwnd != 0 {
-		syswin.RemoveAppBar(a.hwnd)
+		platform.RemoveAppBar(a.hwnd)
 	}
 	if a.trayMgr != nil {
 		a.trayMgr.Quit()
@@ -108,7 +108,7 @@ func (a *App) handleTrayEvents() {
 		case tray.EventToggleStartup:
 			a.cfg.StartWithWindows = !a.cfg.StartWithWindows
 			exePath, _ := os.Executable()
-			_ = config.SetStartWithWindows(a.cfg.StartWithWindows, exePath)
+			_ = config.SetStartOnLogin(a.cfg.StartWithWindows, exePath)
 			_ = config.Save(a.cfg)
 			a.trayMgr.SetStartup(a.cfg.StartWithWindows)
 		case tray.EventQuit:
@@ -162,22 +162,28 @@ func (a *App) SaveConfig(cfg config.Config) error {
 	if a.hwnd != 0 {
 		if cfg.Monitor != prevMonitor || cfg.AppBarMode != prevAppBar {
 			if prevAppBar {
-				syswin.RemoveAppBar(a.hwnd)
+				platform.RemoveAppBar(a.hwnd)
 			}
-			a.monitors = syswin.GetMonitors()
+			a.monitors = platform.GetMonitors()
 			if cfg.Monitor < len(a.monitors) {
-				syswin.DockToMonitor(a.hwnd, a.monitors[cfg.Monitor], cfg.BarHeight, cfg.AppBarMode)
+				platform.DockToMonitor(a.hwnd, a.monitors[cfg.Monitor], cfg.BarHeight, cfg.AppBarMode)
 			}
 		}
-		syswin.SetOpacity(a.hwnd, cfg.Opacity)
+		platform.SetOpacity(a.hwnd, cfg.Opacity)
 	}
 	runtime.EventsEmit(a.ctx, "config:changed")
 	return nil
 }
 
-func (a *App) GetMonitors() []syswin.MonitorInfo {
-	a.monitors = syswin.GetMonitors()
+func (a *App) GetMonitors() []platform.MonitorInfo {
+	a.monitors = platform.GetMonitors()
 	return a.monitors
+}
+
+// PlatformGOOS exposes runtime.GOOS to the frontend so platform-specific
+// UI affordances (e.g. hiding AppBar mode on macOS) can branch on it.
+func (a *App) PlatformGOOS() string {
+	return goosString()
 }
 
 func (a *App) SetActiveAccount(index int) error {
@@ -196,19 +202,19 @@ func (a *App) SetActiveAccount(index int) error {
 }
 
 func (a *App) SetMonitor(index int) error {
-	a.monitors = syswin.GetMonitors()
+	a.monitors = platform.GetMonitors()
 	if index < 0 || index >= len(a.monitors) {
 		return fmt.Errorf("monitor index %d out of range", index)
 	}
 	if a.hwnd != 0 && a.cfg.AppBarMode {
-		syswin.RemoveAppBar(a.hwnd)
+		platform.RemoveAppBar(a.hwnd)
 	}
 	a.cfg.Monitor = index
 	if err := config.Save(a.cfg); err != nil {
 		return err
 	}
 	if a.hwnd != 0 {
-		syswin.DockToMonitor(a.hwnd, a.monitors[index], a.cfg.BarHeight, a.cfg.AppBarMode)
+		platform.DockToMonitor(a.hwnd, a.monitors[index], a.cfg.BarHeight, a.cfg.AppBarMode)
 	}
 	if a.trayMgr != nil {
 		a.trayMgr.SetMonitorChecked(index)
@@ -220,7 +226,7 @@ func (a *App) SetMonitor(index int) error {
 func (a *App) ToggleClickThrough() bool {
 	a.cfg.ClickThrough = !a.cfg.ClickThrough
 	if a.hwnd != 0 {
-		syswin.SetClickThrough(a.hwnd, a.cfg.ClickThrough)
+		platform.SetClickThrough(a.hwnd, a.cfg.ClickThrough)
 	}
 	_ = config.Save(a.cfg)
 	return a.cfg.ClickThrough
@@ -229,7 +235,7 @@ func (a *App) ToggleClickThrough() bool {
 func (a *App) SetOpacity(opacity float64) error {
 	a.cfg.Opacity = opacity
 	if a.hwnd != 0 {
-		syswin.SetOpacity(a.hwnd, opacity)
+		platform.SetOpacity(a.hwnd, opacity)
 	}
 	return config.Save(a.cfg)
 }
