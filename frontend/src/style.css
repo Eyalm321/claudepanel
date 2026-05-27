@@ -22,7 +22,11 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
+  /* Explicit -webkit-user-select for macOS WkWebView, which otherwise
+     happily lets you drag-select bar labels. */
+  -webkit-user-select: none;
   user-select: none;
+  cursor: default;
 }
 
 /* ── Bar ── */
@@ -41,6 +45,14 @@ html, body {
   padding: 0 8px;
   overflow: hidden;
   border-bottom: 1px solid rgba(107, 114, 128, 0.15);
+  cursor: default;
+}
+/* Prevent any descendant from showing the I-beam cursor or being
+   text-selectable. Clickable elements (.arrow, #seg-radio, #seg-pin, the
+   editor buttons) override with cursor:pointer as needed. */
+#bar, #bar * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Auto-hide slide is driven by moving the OS window itself (see

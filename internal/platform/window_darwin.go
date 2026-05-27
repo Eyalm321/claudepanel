@@ -141,6 +141,11 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 	C.platformSetOpacity(C.double(opacity))
 }
 
+// AutoHideSupported is false on macOS — MoveWindow / SetWindowClipTop /
+// HideWindow stubs mean the slide animation can't run, and toggling
+// click-through without the animation just makes the bar unclickable.
+func AutoHideSupported() bool { return false }
+
 // GetCursorPos is a stub on macOS; the hover-watcher is Windows-only for v1.
 func GetCursorPos() (int, int) { return -1, -1 }
 

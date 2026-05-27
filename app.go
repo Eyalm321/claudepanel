@@ -258,13 +258,17 @@ func (a *App) animateY(mon platform.MonitorInfo, targetY int, gen uint64, hideAf
 }
 
 // applyClickThrough sets the window's click-through state based on the
-// combination of the user-configurable cfg.ClickThrough and whether the bar is
-// currently in its "invisible collapsed" state.
+// combination of the user-configurable cfg.ClickThrough and (on platforms
+// where auto-hide is wired up) whether the bar is currently in its
+// "invisible collapsed" state. On macOS / Linux the slide animation is a
+// no-op, so engaging click-through there would just leave a visible-but-
+// unclickable bar — skip it.
 func (a *App) applyClickThrough() {
 	if a.hwnd == 0 {
 		return
 	}
-	platform.SetClickThrough(a.hwnd, a.cfg.ClickThrough || (!a.cfg.Pinned && !a.barExpanded))
+	autoHide := platform.AutoHideSupported() && !a.cfg.Pinned && !a.barExpanded
+	platform.SetClickThrough(a.hwnd, a.cfg.ClickThrough || autoHide)
 }
 
 func (a *App) shutdown(ctx context.Context) {

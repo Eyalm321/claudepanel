@@ -242,6 +242,11 @@ func ResetDwmFrame(hwnd uintptr) {
 	)
 }
 
+// AutoHideSupported reports whether the slide-up auto-hide animation and
+// associated click-through gating can run on this platform. Only Windows
+// has the full set of primitives wired up at v1.
+func AutoHideSupported() bool { return true }
+
 // GetCursorPos returns the current cursor position in virtual screen coords
 // (top-left of the primary monitor is 0,0). Used for hover detection because
 // WebView2's mouseleave is unreliable when the cursor exits a small window.

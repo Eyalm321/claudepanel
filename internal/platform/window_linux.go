@@ -152,6 +152,10 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 		"-set", "_NET_WM_WINDOW_OPACITY", strconv.FormatUint(uint64(alpha), 10)).Run()
 }
 
+// AutoHideSupported is false on Linux — the slide-up animation primitives
+// aren't wired up at v1.
+func AutoHideSupported() bool { return false }
+
 // GetCursorPos is a stub on Linux; the hover-watcher is Windows-only for v1.
 func GetCursorPos() (int, int) { return -1, -1 }
 
