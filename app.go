@@ -142,8 +142,6 @@ func (a *App) GetBarData() (*claude.BarData, error) {
 	return claude.ComputeBarData(
 		acc.Name,
 		sc, creds, sessions, notifs,
-		a.cfg.WeeklyMsgLimit,
-		a.cfg.BillingResetDay,
 		apiUsage,
 	), nil
 }

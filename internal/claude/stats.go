@@ -38,12 +38,10 @@ func ComputeBarData(
 	creds *Credentials,
 	sessions []SessionFile,
 	notifs *NotificationStates,
-	msgLimit int64,
-	billingResetDay int,
 	apiUsage *APIUsage,
 ) *BarData {
 	now := time.Now()
-	periodStart := billingPeriodStart(now, billingResetDay)
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	periodStartStr := periodStart.Format("2006-01-02")
 	todayStr := now.Format("2006-01-02")
 
@@ -64,17 +62,11 @@ func ComputeBarData(
 		}
 	}
 
-	// Progress percent — prefer API value, fall back to local limit calc
+	// Progress percent — from API only
 	var pct float64
 	var showPct bool
 	if apiUsage != nil && apiUsage.WeeklyPercent >= 0 {
 		pct = apiUsage.WeeklyPercent
-		showPct = true
-	} else if msgLimit > 0 {
-		pct = float64(periodMsgs) / float64(msgLimit)
-		if pct > 1.0 {
-			pct = 1.0
-		}
 		showPct = true
 	}
 
@@ -97,7 +89,7 @@ func ComputeBarData(
 	if apiUsage != nil && !apiUsage.ResetAt.IsZero() {
 		resetIn = formatDuration(apiUsage.ResetAt.Sub(now))
 	} else {
-		nextReset := billingPeriodStart(now, billingResetDay).AddDate(0, 1, 0)
+		nextReset := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
 		resetIn = formatDuration(nextReset.Sub(now))
 	}
 
@@ -117,8 +109,8 @@ func ComputeBarData(
 	}
 
 	// PeriodMsgLimit: use 1 as sentinel when we have API-sourced percent (triggers bar display)
-	effectiveLimit := msgLimit
-	if showPct && effectiveLimit == 0 {
+	var effectiveLimit int64
+	if showPct {
 		effectiveLimit = 1
 	}
 
@@ -149,20 +141,6 @@ func ComputeBarData(
 		LimitExceeded:    limitExceeded,
 		LastUpdated:      now.UnixMilli(),
 	}
-}
-
-func billingPeriodStart(now time.Time, resetDay int) time.Time {
-	if resetDay < 1 {
-		resetDay = 1
-	}
-	if resetDay > 28 {
-		resetDay = 28
-	}
-	candidate := time.Date(now.Year(), now.Month(), resetDay, 0, 0, 0, 0, now.Location())
-	if candidate.After(now) {
-		candidate = candidate.AddDate(0, -1, 0)
-	}
-	return candidate
 }
 
 func computePrimaryModel(sc *StatsCache, periodStartStr string) string {

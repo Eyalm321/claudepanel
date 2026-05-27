@@ -22,8 +22,6 @@ type Config struct {
 	Theme            string          `json:"theme"`
 	Opacity          float64         `json:"opacity"`
 	RefreshSeconds   int             `json:"refreshSeconds"`
-	WeeklyMsgLimit   int64           `json:"weeklyMsgLimit"` // 0 = show raw count only
-	BillingResetDay  int             `json:"billingResetDay"`
 	BarHeight        int             `json:"barHeight"`
 	ActiveAccount    int             `json:"activeAccount"`
 	Accounts         []AccountConfig `json:"accounts"`
@@ -68,8 +66,6 @@ func Defaults() Config {
 		Theme:           "terminal-green",
 		Opacity:         0.92,
 		RefreshSeconds:  15,
-		WeeklyMsgLimit:  0, // 0 = show raw count; set e.g. 150000 for Max plan
-		BillingResetDay: 1,
 		BarHeight:       28,
 		ActiveAccount:   0,
 		AppBarMode:      true,

@@ -28,7 +28,7 @@ When enabled, mouse events pass straight through the bar to whatever is behind i
 Registers ClaudePanel to launch at login via the OS-native mechanism: **Windows** Registry (`HKCU\...\Run`), **macOS** LaunchAgent plist, **Linux** XDG autostart `.desktop` file.
 
 ### Live token usage
-Reads `~/.claude/rate_limits.json` (populated via `statuslineCommand`) every N seconds and shows weekly consumption as both a percentage and a shaded progress bar with day-of-month billing reset countdown.
+Reads `~/.claude/rate_limits.json` (populated via `statuslineCommand`) every N seconds and shows weekly consumption as both a percentage and a shaded progress bar, with a reset countdown sourced from the Claude API.
 
 ---
 
@@ -126,8 +126,6 @@ Config file (auto-created on first run):
   "theme": "claude",
   "opacity": 0.92,
   "refreshSeconds": 15,
-  "weeklyMsgLimit": 0,
-  "billingResetDay": 1,
   "barHeight": 28,
   "appBarMode": true,
   "activeAccount": 0,
@@ -142,8 +140,6 @@ Config file (auto-created on first run):
 
 | Field | Description |
 |---|---|
-| `weeklyMsgLimit` | Denominator for usage % (messages per billing period). `0` = show raw count only. Set e.g. `150000` for Max plan. |
-| `billingResetDay` | Day-of-month your billing resets (1 = 1st of month) |
 | `barHeight` | Pixel height of the bar |
 | `refreshSeconds` | Re-read interval for Claude data files |
 | `theme` | Visual theme: `claude`, `fallout`, `amber`, `matrix`, `dracula` |
