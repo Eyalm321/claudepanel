@@ -17,13 +17,13 @@ jobs:
         include:
           - os: windows-latest
             name: Windows
-            artifact: claudebar-windows-installer
+            artifact: claudepanel-windows-installer
           - os: macos-latest
             name: macOS
-            artifact: claudebar-macos-pkg
+            artifact: claudepanel-macos-pkg
           - os: ubuntu-latest
             name: Linux
-            artifact: claudebar-linux
+            artifact: claudepanel-linux
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -65,7 +65,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build\bin\claudebar-amd64-installer.exe dist\ClaudeBar-${{ steps.version.outputs.semver }}-windows-amd64-setup.exe
+          Copy-Item build\bin\claudepanel-amd64-installer.exe dist\ClaudePanel-${{ steps.version.outputs.semver }}-windows-amd64-setup.exe
 
       # ── macOS ──
       - name: Build macOS app bundle
@@ -76,16 +76,16 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p pkgroot/Applications
-          cp -R build/bin/ClaudeBar.app pkgroot/Applications/
+          cp -R build/bin/ClaudePanel.app pkgroot/Applications/
           chmod +x build/darwin/scripts/postinstall build/darwin/scripts/preuninstall
           mkdir -p dist
           pkgbuild \
             --root pkgroot \
             --install-location / \
             --scripts build/darwin/scripts \
-            --identifier com.claudebar.pkg \
+            --identifier com.claudepanel.pkg \
             --version "${{ steps.version.outputs.semver }}" \
-            "dist/ClaudeBar-${{ steps.version.outputs.semver }}-macos-universal.pkg"
+            "dist/ClaudePanel-${{ steps.version.outputs.semver }}-macos-universal.pkg"
 
       # ── Linux ──
       - name: Install Linux build deps

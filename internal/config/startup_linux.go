@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const autostartFileName = "claudebar.desktop"
+const autostartFileName = "claudepanel.desktop"
 
 func autostartPath() (string, error) {
 	base := os.Getenv("XDG_CONFIG_HOME")
@@ -38,7 +38,7 @@ func SetStartOnLogin(enabled bool, exePath string) error {
 	}
 	entry := fmt.Sprintf(`[Desktop Entry]
 Type=Application
-Name=ClaudeBar
+Name=ClaudePanel
 Exec=%s
 X-GNOME-Autostart-enabled=true
 NoDisplay=false

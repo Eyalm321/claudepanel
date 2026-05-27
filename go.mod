@@ -1,4 +1,4 @@
-module claudebar
+module claudepanel
 
 go 1.23.0
 

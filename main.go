@@ -18,7 +18,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:            "__claudebar__",
+		Title:            "__claudepanel__",
 		Width:            1920,
 		Height:           app.cfg.BarHeight,
 		MinWidth:         400,

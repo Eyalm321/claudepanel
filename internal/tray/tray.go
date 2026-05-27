@@ -101,10 +101,10 @@ func (m *Manager) SetStartup(enabled bool) {
 
 func (m *Manager) onReady(iconBytes []byte, version string, accountNames []string, numMonitors int) {
 	systray.SetIcon(iconBytes)
-	systray.SetTooltip("Claude Bar")
+	systray.SetTooltip("Claude Panel")
 
 	// Title (disabled)
-	title := systray.AddMenuItem(fmt.Sprintf("Claude Bar %s", version), "")
+	title := systray.AddMenuItem(fmt.Sprintf("Claude Panel %s", version), "")
 	title.Disable()
 	systray.AddSeparator()
 
@@ -160,7 +160,7 @@ func (m *Manager) onReady(iconBytes []byte, version string, accountNames []strin
 	systray.AddSeparator()
 
 	// Quit
-	quit := systray.AddMenuItem("Quit", "Exit Claude Bar")
+	quit := systray.AddMenuItem("Quit", "Exit Claude Panel")
 	go func() {
 		<-quit.ClickedCh
 		m.events <- Event{Type: EventQuit}

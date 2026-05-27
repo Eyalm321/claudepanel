@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"claudebar/internal/claude"
-	"claudebar/internal/config"
-	"claudebar/internal/platform"
-	"claudebar/internal/tray"
+	"claudepanel/internal/claude"
+	"claudepanel/internal/config"
+	"claudepanel/internal/platform"
+	"claudepanel/internal/tray"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -28,7 +28,7 @@ type App struct {
 }
 
 func NewApp() *App {
-	// Redirect log output to %APPDATA%\ClaudeBar\debug.log for crash diagnosis.
+	// Redirect log output to %APPDATA%\ClaudePanel\debug.log for crash diagnosis.
 	logPath := filepath.Join(config.AppDataDir(), "debug.log")
 	_ = os.MkdirAll(config.AppDataDir(), 0755)
 	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644); err == nil {

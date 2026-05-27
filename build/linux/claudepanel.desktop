@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=ClaudeBar
+Name=ClaudePanel
 GenericName=Claude Code Usage Bar
 Comment=Always-on-top desktop bar showing Claude Code usage stats
-Exec=claudebar
-Icon=claudebar
+Exec=claudepanel
+Icon=claudepanel
 Categories=Utility;Development;
 Terminal=false
 StartupNotify=false
-StartupWMClass=__claudebar__
+StartupWMClass=__claudepanel__

@@ -1,4 +1,4 @@
-# 👾 ClaudeBar
+# 👾 ClaudePanel
 
 A highly customized, lightweight Windows desktop utility bar that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, local native Cascadia Mono typography, and an interactive headless YouTube audio stream (Claude FM).
 
@@ -44,11 +44,11 @@ Download the installer for your platform from the [Releases](../../releases/late
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows 10/11 x64 | `ClaudeBar-*-windows-amd64-setup.exe` | NSIS installer. Requires [WebView2 Runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703) (pre-installed on Win11). |
-| macOS 10.13+ (Intel + Apple Silicon) | `ClaudeBar-*-macos-universal.pkg` | Double-click to install to `/Applications`. |
-| Debian / Ubuntu | `claudebar_*_amd64.deb` | `sudo apt install ./claudebar_*_amd64.deb` |
-| Fedora / RHEL | `claudebar-*.x86_64.rpm` | `sudo dnf install ./claudebar-*.x86_64.rpm` |
-| Any Linux (portable) | `ClaudeBar-x86_64.AppImage` | `chmod +x ClaudeBar-x86_64.AppImage && ./ClaudeBar-x86_64.AppImage` |
+| Windows 10/11 x64 | `ClaudePanel-*-windows-amd64-setup.exe` | NSIS installer. Requires [WebView2 Runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703) (pre-installed on Win11). |
+| macOS 10.13+ (Intel + Apple Silicon) | `ClaudePanel-*-macos-universal.pkg` | Double-click to install to `/Applications`. |
+| Debian / Ubuntu | `claudepanel_*_amd64.deb` | `sudo apt install ./claudepanel_*_amd64.deb` |
+| Fedora / RHEL | `claudepanel-*.x86_64.rpm` | `sudo dnf install ./claudepanel-*.x86_64.rpm` |
+| Any Linux (portable) | `ClaudePanel-x86_64.AppImage` | `chmod +x ClaudePanel-x86_64.AppImage && ./ClaudePanel-x86_64.AppImage` |
 
 The installers configure Claude Code's `statuslineCommand` automatically on install, and remove it on uninstall — no terminal commands needed. AppImage users see a one-time first-run prompt instead (no install hooks available).
 
@@ -56,7 +56,7 @@ The installers configure Claude Code's `statuslineCommand` automatically on inst
 
 Until code-signing certificates are in place, expect:
 - **Windows** → SmartScreen "Windows protected your PC" → click *More info* → *Run anyway*
-- **macOS** → "ClaudeBar cannot be opened because it is from an unidentified developer" → System Settings → Privacy & Security → *Open Anyway*, or right-click the .app → *Open*
+- **macOS** → "ClaudePanel cannot be opened because it is from an unidentified developer" → System Settings → Privacy & Security → *Open Anyway*, or right-click the .app → *Open*
 - **Linux .deb/.rpm** → no warnings (root install)
 - **AppImage** → no warnings (user-mode)
 
@@ -75,7 +75,7 @@ wails build -platform linux/amd64                                # Linux binary 
 
 ## 🔌 Live Usage Capturing (configured automatically by installers)
 
-ClaudeBar reads live usage from `~/.claude/rate_limits.json`, populated by Claude Code via its `statuslineCommand` hook. The installers set this hook for you on install and clear it on uninstall by editing `~/.claude/settings.json` and adding (only) the `statuslineCommand` key — other keys are preserved.
+ClaudePanel reads live usage from `~/.claude/rate_limits.json`, populated by Claude Code via its `statuslineCommand` hook. The installers set this hook for you on install and clear it on uninstall by editing `~/.claude/settings.json` and adding (only) the `statuslineCommand` key — other keys are preserved.
 
 If you built from source or are using the AppImage and want to configure the hook manually:
 
@@ -83,7 +83,7 @@ If you built from source or are using the AppImage and want to configure the hoo
 claude config set statuslineCommand "node -e \"const fs=require('fs');const p=require('path');const os=require('os');const d=fs.readFileSync(0,'utf-8');if(d){const parsed=JSON.parse(d);fs.writeFileSync(p.join(os.homedir(),'.claude','rate_limits.json'),JSON.stringify({...parsed,captured_at:Date.now()}))}\""
 ```
 
-Every Claude prompt then writes a tiny JSON payload to `rate_limits.json`, which ClaudeBar picks up instantly.
+Every Claude prompt then writes a tiny JSON payload to `rate_limits.json`, which ClaudePanel picks up instantly.
 
 ---
 
@@ -93,9 +93,9 @@ Config file (auto-created on first run):
 
 | Platform | Path |
 |---|---|
-| Windows | `%APPDATA%\ClaudeBar\config.json` |
-| macOS | `~/Library/Application Support/ClaudeBar/config.json` |
-| Linux | `$XDG_CONFIG_HOME/ClaudeBar/config.json` (fallback `~/.config/ClaudeBar/config.json`) |
+| Windows | `%APPDATA%\ClaudePanel\config.json` |
+| macOS | `~/Library/Application Support/ClaudePanel/config.json` |
+| Linux | `$XDG_CONFIG_HOME/ClaudePanel/config.json` (fallback `~/.config/ClaudePanel/config.json`) |
 
 
 ```json
@@ -128,7 +128,7 @@ Config file (auto-created on first run):
 ## 📁 Project Structure
 
 ```
-claudebar/
+claudepanel/
 ├── main.go                    # Wails bootstrap + embed directives
 ├── app.go                     # App struct + Wails-exported bindings
 ├── icon_{windows,darwin,linux}.go  # Per-OS tray icon embedding
