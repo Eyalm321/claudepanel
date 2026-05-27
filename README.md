@@ -4,11 +4,9 @@
 
 A highly customized, lightweight desktop utility bar for **Windows, macOS, and Linux** that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, cross-platform monospace typography, and an interactive headless YouTube audio stream (Claude FM).
 
-![ClaudePanel Screenshot](screenshot.png)
-
 ![Bar layout](bar.png)
 
-Always-on-top · Frameless · Multi-monitor Dock · Pin / auto-hide on hover · Click-through mode · System tray · Multi-account · ~30 MB RAM
+Always-on-top · Frameless · Multi-monitor Dock · Pin / auto-hide on hover · System tray · Multi-account · ~30 MB RAM
 
 ---
 
@@ -21,10 +19,7 @@ Switch between any number of Claude accounts — each configured with a separate
 Pick which monitor the bar docks to at any time from the tray menu. On Windows, **AppBar mode** uses the `SHAppBarMessage` API to reserve screen space so maximized windows automatically tile below the bar. On Linux X11 it sets `_NET_WM_STRUT_PARTIAL` for compatible compositors. On macOS and Linux Wayland the bar floats at the topmost window level without reserving space.
 
 ### System tray
-A resident tray icon gives one-click access to all controls without the bar needing to be in focus: switch account, switch monitor, toggle click-through, toggle start-on-login, and quit.
-
-### Click-through mode
-When enabled, mouse events pass straight through the bar to whatever is behind it — ideal for full-screen workflows. Toggle via the tray or Settings. (Linux Wayland: click-through is not yet implemented at v1.)
+A resident tray icon gives one-click access to all controls without the bar needing to be in focus: switch account, switch monitor, toggle start-on-login, manage accounts, and quit.
 
 ### Pin / auto-hide on hover
 A pin icon to the right of the THEME segment toggles between two states:
@@ -142,8 +137,7 @@ Config file (auto-created on first run):
     { "name": "main", "path": "C:\\Users\\USER\\.claude" },
     { "name": "alt",  "path": "C:\\Users\\USER\\.claude-alt" }
   ],
-  "startWithWindows": false,
-  "clickThrough": false
+  "startWithWindows": false
 }
 ```
 
@@ -185,7 +179,6 @@ claudepanel/
 ## ⚠️ Known limitations (v1 cross-platform)
 
 - **Linux Wayland**: there is no portable Wayland protocol for "stay above other windows" or "reserve screen space". The bar appears but may not float above fullscreen apps. KWin honors the `_NET_WM_WINDOW_TYPE_DOCK` hint; GNOME/Mutter mostly ignores it; wlroots compositors (Hyprland, Sway) vary. X11 sessions work correctly.
-- **Linux click-through**: not implemented at v1 (requires XShape extension bindings). The tray menu option is preserved but is a no-op on Linux for now.
 - **macOS docking**: NSWindow at `NSStatusWindowLevel` floats above other windows but cannot reserve screen space the way the Windows AppBar API does. Maximized apps will draw beneath the bar — accepted as macOS-native behavior.
 - **macOS Gatekeeper** (unsigned v1): see *First-launch security warnings* in Quick Start.
 - **Settings merge safety**: if `~/.claude/settings.json` already exists but contains invalid JSON, the installer logs a warning and skips the modification rather than overwriting the file.

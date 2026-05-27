@@ -10,9 +10,8 @@ import (
 type EventType int
 
 const (
-	EventSetAccount    EventType = iota // Index int
-	EventSetMonitor                     // Index int
-	EventToggleClickThrough
+	EventSetAccount EventType = iota // Index int
+	EventSetMonitor                  // Index int
 	EventToggleStartup
 	EventManageAccounts
 	EventQuit
@@ -31,8 +30,7 @@ type Manager struct {
 	// updated at runtime
 	accountItems []*systray.MenuItem
 	monitorItems []*systray.MenuItem
-	clickThruItem *systray.MenuItem
-	startupItem   *systray.MenuItem
+	startupItem  *systray.MenuItem
 }
 
 func New() *Manager {
@@ -69,20 +67,6 @@ func (m *Manager) SetMonitorChecked(index int) {
 		} else {
 			item.Uncheck()
 		}
-	}
-}
-
-// SetClickThrough updates the click-through menu item label.
-func (m *Manager) SetClickThrough(enabled bool) {
-	if m.clickThruItem == nil {
-		return
-	}
-	if enabled {
-		m.clickThruItem.SetTitle("Click-through: ON")
-		m.clickThruItem.Check()
-	} else {
-		m.clickThruItem.SetTitle("Click-through: OFF")
-		m.clickThruItem.Uncheck()
 	}
 }
 
@@ -141,14 +125,6 @@ func (m *Manager) onReady(iconBytes []byte, version string, accountNames []strin
 		}(item, idx)
 	}
 	systray.AddSeparator()
-
-	// Click-through toggle
-	m.clickThruItem = systray.AddMenuItem("Click-through: OFF", "Pass mouse events through the bar")
-	go func() {
-		for range m.clickThruItem.ClickedCh {
-			m.events <- Event{Type: EventToggleClickThrough}
-		}
-	}()
 
 	// Start-on-login toggle
 	m.startupItem = systray.AddMenuItem("Start on login: OFF", "Launch on login")

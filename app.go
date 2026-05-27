@@ -293,9 +293,6 @@ func (a *App) handleTrayEvents() {
 			_ = a.SetActiveAccount(event.Index)
 		case tray.EventSetMonitor:
 			_ = a.SetMonitor(event.Index)
-		case tray.EventToggleClickThrough:
-			enabled := a.ToggleClickThrough()
-			a.trayMgr.SetClickThrough(enabled)
 		case tray.EventToggleStartup:
 			a.cfg.StartWithWindows = !a.cfg.StartWithWindows
 			exePath, _ := os.Executable()
