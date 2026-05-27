@@ -7,6 +7,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend/dist
@@ -47,6 +48,14 @@ func main() {
 		},
 		CSSDragProperty:  "--wails-draggable",
 		CSSDragValue:     "drag",
+		Mac: &mac.Options{
+			Preferences: &mac.Preferences{
+				// Allow <audio>/<video> autoplay without a click. Requires the
+				// forked Wails v2 (see go.mod replace directive); upstream
+				// PR: https://github.com/wailsapp/wails/pull/5512.
+				EnableAutoplayWithoutUserAction: mac.Enabled,
+			},
+		},
 	})
 
 	if err != nil {
