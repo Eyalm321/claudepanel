@@ -1,19 +1,41 @@
 # 👾 ClaudePanel
 
-A highly customized, lightweight Windows desktop utility bar that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, local native Cascadia Mono typography, and an interactive headless YouTube audio stream (Claude FM).
+A highly customized, lightweight desktop utility bar for **Windows, macOS, and Linux** that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, cross-platform monospace typography, and an interactive headless YouTube audio stream (Claude FM).
 
 ```
 👾 │ ACCT: MAIN [PRO] │ WEEKLY: 71% ░░░░░░··· │ RESET: 4D 18H │ OPUS │ IDLE │ CLAUDE FM [ON] · VOL 120%
 ```
 
-Always-on-top · Frameless · Multi-monitor Dock · Click-through mode · System tray · ~30 MB RAM
+Always-on-top · Frameless · Multi-monitor Dock · Click-through mode · System tray · Multi-account · ~30 MB RAM
+
+---
+
+## 🖥️ Core Features
+
+### Multi-account
+Switch between any number of Claude accounts — each configured with a separate `~/.claude` path — via the system tray or Settings panel. Account names and the active selection persist across restarts.
+
+### Multi-monitor docking
+Pick which monitor the bar docks to at any time from the tray menu. On Windows, **AppBar mode** uses the `SHAppBarMessage` API to reserve screen space so maximized windows automatically tile below the bar. On Linux X11 it sets `_NET_WM_STRUT_PARTIAL` for compatible compositors. On macOS and Linux Wayland the bar floats at the topmost window level without reserving space.
+
+### System tray
+A resident tray icon gives one-click access to all controls without the bar needing to be in focus: switch account, switch monitor, toggle click-through, toggle start-on-login, and quit.
+
+### Click-through mode
+When enabled, mouse events pass straight through the bar to whatever is behind it — ideal for full-screen workflows. Toggle via the tray or Settings. (Linux Wayland: click-through is not yet implemented at v1.)
+
+### Start on login
+Registers ClaudePanel to launch at login via the OS-native mechanism: **Windows** Registry (`HKCU\...\Run`), **macOS** LaunchAgent plist, **Linux** XDG autostart `.desktop` file.
+
+### Live token usage
+Reads `~/.claude/rate_limits.json` (populated via `statuslineCommand`) every N seconds and shows weekly consumption as both a percentage and a shaded progress bar with day-of-month billing reset countdown.
 
 ---
 
 ## 🎨 Premium Visual Features
 
-### 1. Cascadia Mono Typography & TUI Glyphs
-- **Native Windows Terminal Font**: Leverages your system's pre-installed **Cascadia Mono / Cascadia Code** fonts for a 100% pixel-perfect typographic match to your CLI window.
+### 1. Monospace Typography & TUI Glyphs
+- **Developer-first font stack**: Prefers **Cascadia Mono / Cascadia Code** (Windows Terminal), **SF Mono** (macOS), **Menlo**, **Fira Code**, **JetBrains Mono**, **DejaVu Sans Mono**, and **Inconsolata** — picks whatever monospace font your system already has installed.
 - **Dynamic Shaded Progress Blocks**: Displays weekly and hourly usage via retro character tiles (`░▒▓█`) representing your current warning tier. Unused cells are faint terminal middle dots (`·`).
 
 ### 2. Retro Theme Engine
@@ -101,11 +123,13 @@ Config file (auto-created on first run):
 ```json
 {
   "monitor": 0,
+  "theme": "claude",
   "opacity": 0.92,
   "refreshSeconds": 15,
-  "weeklyTokenLimit": 20000000,
+  "weeklyMsgLimit": 0,
   "billingResetDay": 1,
   "barHeight": 28,
+  "appBarMode": true,
   "activeAccount": 0,
   "accounts": [
     { "name": "main", "path": "C:\\Users\\USER\\.claude" },
@@ -118,10 +142,12 @@ Config file (auto-created on first run):
 
 | Field | Description |
 |---|---|
-| `weeklyTokenLimit` | Denominator for usage % (tokens per billing period). Default 20M. |
+| `weeklyMsgLimit` | Denominator for usage % (messages per billing period). `0` = show raw count only. Set e.g. `150000` for Max plan. |
 | `billingResetDay` | Day-of-month your billing resets (1 = 1st of month) |
 | `barHeight` | Pixel height of the bar |
 | `refreshSeconds` | Re-read interval for Claude data files |
+| `theme` | Visual theme: `claude`, `fallout`, `amber`, `matrix`, `dracula` |
+| `appBarMode` | Reserve screen space so maximized windows tile below the bar (Windows/Linux X11 only) |
 
 ---
 
@@ -131,6 +157,7 @@ Config file (auto-created on first run):
 claudepanel/
 ├── main.go                    # Wails bootstrap + embed directives
 ├── app.go                     # App struct + Wails-exported bindings
+├── platform_info.go           # runtime.GOOS helper exposed to frontend
 ├── icon_{windows,darwin,linux}.go  # Per-OS tray icon embedding
 ├── internal/
 │   ├── config/
