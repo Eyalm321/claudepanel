@@ -2,7 +2,7 @@ import './style.css';
 import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
-  SaveConfig, SetPinned, SetEditorOpen, PlatformGOOS
+  SaveConfig, SetPinned, SetEditorOpen
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -153,21 +153,6 @@ async function init() {
 
     pinned = cfg.pinned !== false;
     applyPinUI();
-
-    // Hide the Claude FM segment on macOS — the YouTube iframe player's
-    // audio is blocked by WkWebView's autoplay policy and we can't override
-    // it without patching Wails (see README "Known limitations").
-    try {
-      const goos = await PlatformGOOS();
-      if (goos === 'darwin') {
-        const radio = document.getElementById('seg-radio');
-        if (radio) {
-          const sep = radio.nextElementSibling;
-          radio.style.display = 'none';
-          if (sep && sep.classList.contains('sep')) sep.style.display = 'none';
-        }
-      }
-    } catch (e) { /* ignore */ }
 
     // Hide account cycling arrows if there is only one account configured
     const accounts = (cfg && cfg.accounts) || [];

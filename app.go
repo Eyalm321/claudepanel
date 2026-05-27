@@ -372,12 +372,6 @@ func (a *App) GetMonitors() []platform.MonitorInfo {
 	return a.monitors
 }
 
-// PlatformGOOS exposes runtime.GOOS to the frontend so platform-specific
-// UI affordances (e.g. hiding AppBar mode on macOS) can branch on it.
-func (a *App) PlatformGOOS() string {
-	return goosString()
-}
-
 func (a *App) SetActiveAccount(index int) error {
 	if index < 0 || index >= len(a.cfg.Accounts) {
 		return fmt.Errorf("account index %d out of range", index)

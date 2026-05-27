@@ -12,8 +12,6 @@ export function GetMonitors():Promise<Array<platform.MonitorInfo>>;
 
 export function GetVersion():Promise<string>;
 
-export function PlatformGOOS():Promise<string>;
-
 export function SaveConfig(arg1:config.Config):Promise<void>;
 
 export function SetActiveAccount(arg1:number):Promise<void>;
