@@ -1,72 +1,67 @@
 <p align="center"><img src="logo.png" alt="ClaudePanel logo" width="160" /></p>
 
-# 👾 ClaudePanel
+<h1 align="center">👾 ClaudePanel</h1>
 
-A highly customized, lightweight desktop utility bar for **Windows, macOS, and Linux** that displays Claude Code usage across multiple accounts with a retro terminal aesthetic. Fully integrated with custom terminal themes, cross-platform monospace typography, and an interactive headless YouTube audio stream (Claude FM).
+<p align="center"><strong>A retro-styled desktop HUD for Claude Code.</strong><br/>
+Monitor token usage, switch accounts, dock across monitors, and stream Lo-Fi radio — all from a native cross-platform utility bar.</p>
 
-![Bar layout](bar.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go 1.25" />
+  <img src="https://img.shields.io/badge/Wails-v2-DF0067" alt="Wails v2" />
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-success" alt="Windows | macOS | Linux" />
+  <img src="https://img.shields.io/badge/RAM-~30MB-orange" alt="~30MB RAM" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
+</p>
 
-Always-on-top · Frameless · Multi-monitor Dock · Pin / auto-hide on hover · System tray · Multi-account · ~30 MB RAM
+<p align="center"><img src="bar.png" alt="Bar layout" /></p>
+
+<p align="center"><em>Always-on-top · Frameless · Multi-monitor Dock · Pin / auto-hide on hover · System tray · Multi-account</em></p>
+
+---
+
+## 💡 Why ClaudePanel?
+
+A permanent lightweight desktop HUD for Claude Code users — live token monitoring, multi-account switching, cross-monitor docking, retro terminal aesthetics, ambient Lo-Fi radio, zero-browser workflow.
+
+Unlike browser dashboards or terminal-only tools, ClaudePanel lives directly in your desktop environment with native OS integrations: Windows AppBar reservation, macOS LaunchAgents, Linux `_NET_WM_STRUT_PARTIAL`, system-tray everywhere.
+
+## 👤 Built for
+
+- Claude Code power users running long sessions
+- Teams juggling multiple Claude accounts
+- Terminal enthusiasts and retro / CRT-aesthetic fans
+- Anyone who prefers a HUD over an extra browser tab
+
+---
+
+## 🎬 Demo
+
+<!-- TODO: drop GIFs into docs/demo/ and replace this section with a 3-column table:
+| Themes | Auto-hide | Claude FM |
+|---|---|---|
+| ![](docs/demo/themes.gif) | ![](docs/demo/hide.gif) | ![](docs/demo/fm.gif) |
+-->
+
+_Animated demos coming soon. For now, see [the bar layout above](#-claudepanel) and the [themes](#-visual-design) section below._
 
 ---
 
 ## 🖥️ Core Features
 
-### Multi-account
-Switch between any number of Claude accounts — each configured with a separate `~/.claude` path — via the system tray or Settings panel. Account names and the active selection persist across restarts.
-
-### Multi-monitor docking
-Pick which monitor the bar docks to at any time from the tray menu. On Windows, **AppBar mode** uses the `SHAppBarMessage` API to reserve screen space so maximized windows automatically tile below the bar. On Linux X11 it sets `_NET_WM_STRUT_PARTIAL` for compatible compositors. On macOS and Linux Wayland the bar floats at the topmost window level without reserving space.
-
-### System tray
-A resident tray icon gives one-click access to all controls without the bar needing to be in focus: switch account, switch monitor, toggle start-on-login, manage accounts, and quit.
-
-### Pin / auto-hide on hover
-A pin icon to the right of the THEME segment toggles between two states:
-- **Pinned** (orange, tilted): bar is docked and permanently visible — the default on every launch.
-- **Unpinned** (gray, upright): bar slides up off the top of the screen and disappears. Move the cursor to the top edge of its monitor and it slides back down (Go-side cursor polling at 80 ms — WebView2 `mouseleave` is unreliable on a 28 px window). A 200 ms grace period prevents accidental dismissal on cursor overshoot.
-
-The slide is driven by animating the OS window's Y position (~60 fps ease-out cubic), with a `SetWindowRgn` clip that masks out any portion that would otherwise spill onto a monitor sitting above. (Windows only at v1; on macOS / Linux the toggle still affects the docked-vs-floating state but the slide animation is a no-op.)
-
-### Start on login
-Registers ClaudePanel to launch at login via the OS-native mechanism: **Windows** Registry (`HKCU\...\Run`), **macOS** LaunchAgent plist, **Linux** XDG autostart `.desktop` file.
-
-### Live token usage
-Reads `~/.claude/rate_limits.json` (populated via `statuslineCommand`) every N seconds and shows weekly consumption as both a percentage and a shaded progress bar, with a reset countdown sourced from the Claude API.
-
----
-
-## 🎨 Premium Visual Features
-
-### 1. Monospace Typography & TUI Glyphs
-- **Developer-first font stack**: Prefers **Cascadia Mono / Cascadia Code** (Windows Terminal), **SF Mono** (macOS), **Menlo**, **Fira Code**, **JetBrains Mono**, **DejaVu Sans Mono**, and **Inconsolata** — picks whatever monospace font your system already has installed.
-- **Dynamic Shaded Progress Blocks**: Displays weekly and hourly usage via retro character tiles (`░▒▓█`) representing your current warning tier. Unused cells are faint terminal middle dots (`·`).
-
-### 2. Retro Theme Engine
-Cycle between five distinct CRT-scanline-filtered presets on-the-fly:
-- 🔸 **CLAUDE (Default)**: Flat CLI style featuring signature terracotta orange accents (`#d77757`), lavender badges (`#b1b9f9`), and clean white headers.
-- 🟢 **FALLOUT**: Iconic Pip-Boy green HUD with outline progress bar brackets (`____]`), a solid 1px-higher flush green fill, glowing CRT raster scanlines, and high-readability dimmed green labels (`#2db32d`).
-- 🟡 **AMBER**: DEC VT100 / Fallout NV terminal with beautiful glowing amber values and high-readability dimmed amber labels (`#b37b00`).
-- 📟 **MATRIX**: Digital rain theme with sharp green characters, custom dividers, and a blinking green/yellow/red terminal block caret (`█`) synced to warning status.
-- 😈 **DRACULA**: Sleek modern dark mode with cyan labels and pastel pink progress bars.
-
-### 3. Headless Radio Player (Claude FM)
-Listen to the iconic **Claude FM** Lo-Fi stream directly inside the bar without opening any browser windows:
-- 📻 **Masked Marquee**: When playing, the label transforms into a smooth horizontal scrolling text: `NOW PLAYING CLAUDE FM · NOW PLAYING CLAUDE FM · `. This text is hidden beyond a fixed-width mask (`75px`), scrolling seamlessly without affecting surrounding elements. Reverts to `CLAUDE FM` instantly when paused.
-- 🔊 **0% - 200% Volume Range**: Custom extended volume headroom. Linearly maps the UI's `0% - 200%` range to the YouTube player's default `0 - 100` volume range.
-- 🎛️ **Dual Adjustments**:
-  - **Scroll Wheel**: Hover and scroll up/down anywhere over the segment to adjust volume by precise `5%` increments.
-  - **Click-Cycling**: Click on `VOL` or the volume number to cycle downwards in granular `10%` steps (e.g. `200% → 190% → 180% → ... → 0% → 200%`).
-- 💾 **State Persistence**: Saves your preferred volume level and theme choice to `localStorage` to restore them automatically on boot.
-
-### 4. Smart Status Overrides
-- Dynamically translates dynamic and static `OFFLINE` indicators globally into a sleek active lavender **`IDLE`** status badge (`#b1b9f9`) to preserve your active CLI context.
+- **Live token usage** — weekly + hourly consumption, percentage, shaded progress bar, reset countdown
+- **Multi-account** — switch any number of Claude accounts (separate `~/.claude` paths) via tray or Settings
+- **Multi-monitor docking** — pick the target monitor at any time; reserves screen space on Windows + Linux X11
+- **Pin / auto-hide on hover** — unpin to slide the bar off-screen; cursor at top edge slides it back
+- **System tray** — switch account, switch monitor, toggle start-on-login, manage accounts, quit
+- **Start on login** — native autostart on all three platforms
+- **5 retro themes** — Claude, Fallout, Amber, Matrix, Dracula
+- **Headless Claude FM** — embedded Lo-Fi YouTube stream with custom volume control
 
 ---
 
 ## 🚀 Quick Start
 
-Download the installer for your platform from the [Releases](../../releases/latest) page:
+Download from the [Releases](../../releases/latest) page:
 
 | Platform | File | Notes |
 |---|---|---|
@@ -76,53 +71,125 @@ Download the installer for your platform from the [Releases](../../releases/late
 | Fedora / RHEL | `claudepanel-*.x86_64.rpm` | `sudo dnf install ./claudepanel-*.x86_64.rpm` |
 | Any Linux (portable) | `ClaudePanel-x86_64.AppImage` | `chmod +x ClaudePanel-x86_64.AppImage && ./ClaudePanel-x86_64.AppImage` |
 
-The installers configure Claude Code's `statuslineCommand` automatically on install, and remove it on uninstall — no terminal commands needed. AppImage users see a one-time first-run prompt instead (no install hooks available).
+Installers wire up Claude Code's `statuslineCommand` automatically and clean it up on uninstall — no terminal commands needed. AppImage users get a one-time first-run prompt instead.
 
-### First-launch security warnings (unsigned v1)
+<details>
+<summary><strong>First-launch security warnings (unsigned v1)</strong></summary>
 
-Until code-signing certificates are in place, expect:
-- **Windows** → SmartScreen "Windows protected your PC" → click *More info* → *Run anyway*
-- **macOS** → "ClaudePanel cannot be opened because it is from an unidentified developer" → System Settings → Privacy & Security → *Open Anyway*, or right-click the .app → *Open*
+- **Windows** → SmartScreen "Windows protected your PC" → *More info* → *Run anyway*
+- **macOS** → "ClaudePanel cannot be opened…" → System Settings → Privacy & Security → *Open Anyway*, or right-click the .app → *Open*
 - **Linux .deb/.rpm** → no warnings (root install)
 - **AppImage** → no warnings (user-mode)
 
-### Build from source
+</details>
 
-Requires Go 1.23+, Node.js 18+, Wails v2 CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`). On Linux also: `libgtk-3-dev`, `libwebkit2gtk-4.0-dev`, `wmctrl`, `x11-utils`, `xdotool`.
+<details>
+<summary><strong>Build from source</strong></summary>
+
+Requires Go 1.25+, Node.js 18+, Wails v2 CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`). On Linux also: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `pkg-config`.
 
 ```bash
-wails dev                                                       # hot-reload dev mode
-wails build -platform windows/amd64 -nsis                        # Windows installer
-wails build -platform darwin/universal                           # macOS .app (then see build/darwin/scripts for .pkg)
-wails build -platform linux/amd64                                # Linux binary (then nfpm/AppImage via build/linux/*)
+wails dev                                         # hot-reload dev mode
+wails build -platform windows/amd64 -nsis         # Windows installer
+wails build -platform darwin/universal            # macOS .app (then build/darwin/scripts for .pkg)
+wails build -platform linux/amd64 -tags webkit2_41  # Linux binary (then nfpm/AppImage via build/linux/*)
 ```
+
+</details>
 
 ---
 
-## 🔌 Live Usage Capturing (configured automatically by installers)
+## 🎨 Visual Design
 
-ClaudePanel reads live usage from `~/.claude/rate_limits.json`, populated by Claude Code via its `statuslineCommand` hook. The installers set this hook for you on install and clear it on uninstall by editing `~/.claude/settings.json` and adding (only) the `statuslineCommand` key — other keys are preserved.
+Five distinct CRT-scanline-filtered themes, cycle on the fly:
 
-If you built from source or are using the AppImage and want to configure the hook manually:
+| Theme | Vibe |
+|---|---|
+| 🔸 **CLAUDE** (default) | Flat CLI — signature terracotta orange (`#d77757`), lavender badges (`#b1b9f9`), white headers |
+| 🟢 **FALLOUT** | Pip-Boy green HUD, outlined progress brackets, glowing CRT scanlines |
+| 🟡 **AMBER** | DEC VT100 / Fallout NV amber terminal — glowing values, dimmed labels |
+| 📟 **MATRIX** | Digital rain — sharp green characters, blinking caret synced to warning status |
+| 😈 **DRACULA** | Sleek dark mode — cyan labels, pastel pink progress |
 
-```bash
-claude config set statuslineCommand "node -e \"const fs=require('fs');const p=require('path');const os=require('os');const d=fs.readFileSync(0,'utf-8');if(d){const parsed=JSON.parse(d);fs.writeFileSync(p.join(os.homedir(),'.claude','rate_limits.json'),JSON.stringify({...parsed,captured_at:Date.now()}))}\""
+<!-- TODO: add per-theme screenshots to docs/themes/ then drop in a 5-cell table:
+| Claude | Fallout | Amber | Matrix | Dracula |
+|---|---|---|---|---|
+| ![](docs/themes/claude.png) | ![](docs/themes/fallout.png) | ![](docs/themes/amber.png) | ![](docs/themes/matrix.png) | ![](docs/themes/dracula.png) |
+-->
+
+### Typography & TUI glyphs
+
+- **Developer-first font stack**: prefers Cascadia Mono / Cascadia Code, then SF Mono, Menlo, Fira Code, JetBrains Mono, DejaVu Sans Mono, Inconsolata — uses whatever's installed.
+- **Retro shaded meters**: usage rendered with `░▒▓█` glyphs that change shade with warning tier; unused cells are faint terminal middle dots (`·`).
+
+---
+
+## 🛠️ Advanced Features
+
+### Pin / auto-hide
+
+A pin icon to the right of THEME toggles:
+- **Pinned** (orange, tilted): docked, permanently visible — the default.
+- **Unpinned** (gray, upright): bar slides up off-screen; cursor at the top edge slides it back.
+
+<details>
+<summary>Implementation notes</summary>
+
+Go-side cursor polling at 80 ms — WebView2's `mouseleave` is unreliable on a 28 px window. A 200 ms grace period prevents accidental dismissal on cursor overshoot. The slide animates the OS window's Y position at ~60 fps (ease-out cubic) with a `SetWindowRgn` clip that masks any portion that would spill onto a monitor sitting above. (Windows only at v1; on macOS / Linux the toggle still affects docked-vs-floating state but the slide is a no-op.)
+
+</details>
+
+### Multi-monitor docking
+
+Pick the target monitor from the tray menu. On Windows, **AppBar mode** uses `SHAppBarMessage` to reserve screen space — maximized windows automatically tile below. On Linux X11 it sets `_NET_WM_STRUT_PARTIAL` for compatible compositors. On macOS and Linux Wayland the bar floats at the topmost window level without reserving space.
+
+### Claude FM (headless Lo-Fi radio)
+
+Embedded YouTube audio stream — no browser windows needed.
+
+- 📻 **Masked marquee**: when playing, the label scrolls `NOW PLAYING CLAUDE FM ·` horizontally behind a 75 px mask; reverts instantly on pause.
+- 🔊 **0–200 % volume range**: extended headroom mapped linearly to YouTube's `0–100`.
+- 🎛️ **Dual control**: scroll-wheel adjusts in 5 % steps; clicking `VOL` cycles in 10 % steps.
+- 💾 **State persistence**: volume and theme saved to `localStorage`.
+
+### Smart status overrides
+
+Dynamic and static `OFFLINE` indicators are translated globally into a lavender **`IDLE`** badge (`#b1b9f9`) to preserve your active CLI context.
+
+---
+
+## 🧭 Architecture
+
 ```
-
-Every Claude prompt then writes a tiny JSON payload to `rate_limits.json`, which ClaudePanel picks up instantly.
+Claude Code (CLI)
+       │
+       │  statuslineCommand hook
+       ▼
+~/.claude/rate_limits.json   ←  written every prompt
+       │
+       │  filesystem poll (refreshSeconds)
+       ▼
+ClaudePanel backend (Go)
+       │
+       │  Wails IPC (JSON bindings)
+       ▼
+WebView frontend (HTML/CSS/JS)
+       │
+       └── OS integrations: AppBar / NSWindow / X11 dock,
+                            system tray, autostart, monitors
+```
 
 ---
 
 ## ⚙️ Configuration
 
-Config file (auto-created on first run):
+Auto-created on first run:
 
 | Platform | Path |
 |---|---|
 | Windows | `%APPDATA%\ClaudePanel\config.json` |
 | macOS | `~/Library/Application Support/ClaudePanel/config.json` |
 | Linux | `$XDG_CONFIG_HOME/ClaudePanel/config.json` (fallback `~/.config/ClaudePanel/config.json`) |
-
 
 ```json
 {
@@ -145,8 +212,23 @@ Config file (auto-created on first run):
 |---|---|
 | `barHeight` | Pixel height of the bar |
 | `refreshSeconds` | Re-read interval for Claude data files |
-| `theme` | Visual theme: `claude`, `fallout`, `amber`, `matrix`, `dracula` |
-| `appBarMode` | Reserve screen space so maximized windows tile below the bar (Windows/Linux X11 only) |
+| `theme` | `claude`, `fallout`, `amber`, `matrix`, `dracula` |
+| `appBarMode` | Reserve screen space (Windows / Linux X11 only) |
+
+<details>
+<summary><strong>How live usage capture works</strong></summary>
+
+ClaudePanel reads `~/.claude/rate_limits.json`, populated by Claude Code's `statuslineCommand` hook. Installers set this hook automatically and clear it on uninstall by editing `~/.claude/settings.json` (only the `statuslineCommand` key — other keys are preserved).
+
+If you built from source or are using the AppImage and want to configure manually:
+
+```bash
+claude config set statuslineCommand "node -e \"const fs=require('fs');const p=require('path');const os=require('os');const d=fs.readFileSync(0,'utf-8');if(d){const parsed=JSON.parse(d);fs.writeFileSync(p.join(os.homedir(),'.claude','rate_limits.json'),JSON.stringify({...parsed,captured_at:Date.now()}))}\""
+```
+
+Every Claude prompt then writes a tiny JSON payload to `rate_limits.json`, which ClaudePanel picks up instantly.
+
+</details>
 
 ---
 
@@ -154,37 +236,36 @@ Config file (auto-created on first run):
 
 ```
 claudepanel/
-├── main.go                    # Wails bootstrap + embed directives
-├── app.go                     # App struct + Wails-exported bindings
-├── platform_info.go           # runtime.GOOS helper exposed to frontend
-├── icon_{windows,darwin,linux}.go  # Per-OS tray icon embedding
+├── main.go                          # Wails bootstrap + embed directives
+├── app.go                           # App struct + Wails-exported bindings
+├── icon_{windows,darwin,linux}.go   # Per-OS tray icon embedding
 ├── internal/
 │   ├── config/
-│   │   ├── config.go              # Config struct, Load/Save, cross-platform AppDataDir
-│   │   └── startup_{windows,darwin,linux}.go  # Per-OS autostart (registry / LaunchAgent / .desktop)
-│   ├── claude/                    # Read Claude JSON files, compute BarData
-│   ├── platform/                  # Per-OS window + monitor APIs
+│   │   ├── config.go                # Config struct, Load/Save, cross-platform AppDataDir
+│   │   └── startup_{windows,darwin,linux}.go  # autostart (registry / LaunchAgent / .desktop)
+│   ├── claude/                      # Read Claude JSON files, compute BarData
+│   ├── platform/                    # Per-OS window + monitor APIs
 │   │   ├── window_{windows,darwin,linux}.go
 │   │   └── monitor_{windows,darwin,linux}.go
-│   └── tray/                      # System tray via getlantern/systray
-├── frontend/                       # Wails webview UI
+│   └── tray/                        # System tray via fyne.io/systray
+├── frontend/                        # Wails webview UI
 └── build/
-    ├── windows/installer/          # NSIS template + statusline PowerShell script
-    ├── darwin/scripts/             # pkgbuild postinstall/preuninstall bash scripts
-    └── linux/                      # nfpm.yaml, .desktop, AppDir, AppRun, postinstall.sh
+    ├── windows/installer/           # NSIS template + statusline PowerShell script
+    ├── darwin/scripts/              # pkgbuild postinstall/preuninstall bash scripts
+    └── linux/                       # nfpm.yaml, .desktop, AppDir, AppRun, postinstall.sh
 ```
 
 ---
 
 ## ⚠️ Known limitations (v1 cross-platform)
 
-- **Linux Wayland**: there is no portable Wayland protocol for "stay above other windows" or "reserve screen space". The bar appears but may not float above fullscreen apps. KWin honors the `_NET_WM_WINDOW_TYPE_DOCK` hint; GNOME/Mutter mostly ignores it; wlroots compositors (Hyprland, Sway) vary. X11 sessions work correctly.
-- **macOS docking**: NSWindow at `NSStatusWindowLevel` floats above other windows but cannot reserve screen space the way the Windows AppBar API does. Maximized apps will draw beneath the bar — accepted as macOS-native behavior.
+- **Linux Wayland**: no portable protocol for "stay above other windows" or "reserve screen space". KWin honors `_NET_WM_WINDOW_TYPE_DOCK`; GNOME/Mutter mostly ignores it; wlroots compositors (Hyprland, Sway) vary. X11 sessions work correctly.
+- **macOS docking**: NSWindow at `NSStatusWindowLevel` floats above other windows but can't reserve screen space the way Windows AppBar does — accepted as macOS-native behavior.
 - **macOS Gatekeeper** (unsigned v1): see *First-launch security warnings* in Quick Start.
-- **Settings merge safety**: if `~/.claude/settings.json` already exists but contains invalid JSON, the installer logs a warning and skips the modification rather than overwriting the file.
+- **Settings merge safety**: if `~/.claude/settings.json` already exists but contains invalid JSON, the installer logs a warning and skips the modification rather than overwriting it.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see [LICENSE](LICENSE).
