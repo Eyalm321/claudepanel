@@ -65,6 +65,11 @@ jobs:
           fi
 
       # ── Windows ──
+      - name: Install NSIS
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
       - name: Build Windows installer
         if: matrix.os == 'windows-latest'
         run: wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
@@ -114,6 +119,12 @@ jobs:
       - name: Build Linux binary
         if: matrix.os == 'ubuntu-latest'
         run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+
+      - name: Normalise Linux binary name to lowercase
+        if: matrix.os == 'ubuntu-latest'
+        # Wails honours outputfilename ("ClaudePanel") on Linux too, but the
+        # nfpm.yaml and AppImage script expect lowercase per Linux convention.
+        run: cp build/bin/ClaudePanel build/bin/claudepanel
 
       - name: Install nfpm
         if: matrix.os == 'ubuntu-latest'
