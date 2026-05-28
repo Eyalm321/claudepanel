@@ -40,6 +40,66 @@ static NSMutableDictionary* pendingWins = nil;
 static dispatch_source_t trustTimer = nil;
 static int trustTimerTicks = 0;
 
+// Diagnostic log. Opened lazily on first PLOG call so the file shows up at
+// ~/Library/Application Support/ClaudePanel/pushdown.log without depending on
+// initPushdownIfNeeded ordering. Line-flushed after every write so a crash
+// preserves the last entry. This exists specifically to pinpoint AX-path
+// crashes on a host the developer can't run a debugger on; if the file gets
+// noisy in normal operation that's fine for now.
+static FILE* pdLog = NULL;
+static dispatch_once_t pdLogOnce;
+
+static void pdLogOpen(void) {
+    dispatch_once(&pdLogOnce, ^{
+        NSString* dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/ClaudePanel"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:nil];
+        NSString* path = [dir stringByAppendingPathComponent:@"pushdown.log"];
+        pdLog = fopen([path fileSystemRepresentation], "a");
+        if (pdLog) {
+            setvbuf(pdLog, NULL, _IOLBF, 0);
+            time_t now = time(NULL);
+            struct tm tm; localtime_r(&now, &tm);
+            char ts[32];
+            strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
+            fprintf(pdLog, "\n=== pushdown.log open %s ===\n", ts);
+            fflush(pdLog);
+        }
+    });
+}
+
+// PLOG writes a line tagged with hi-res timestamp and a short thread label
+// (M=main, P=pushdown, ?=other) so we can spot cross-thread races. Use it at
+// every AX call site and every state transition.
+__attribute__((format(printf, 1, 2)))
+static void pLog(const char* fmt, ...) {
+    pdLogOpen();
+    if (!pdLog) return;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm tm; localtime_r(&ts.tv_sec, &tm);
+    char tbuf[32];
+    strftime(tbuf, sizeof(tbuf), "%H:%M:%S", &tm);
+
+    char threadTag = '?';
+    if ([NSThread isMainThread]) threadTag = 'M';
+    else {
+        const char* label = dispatch_queue_get_label(DISPATCH_CURRENT_QUEUE_LABEL);
+        if (label && strstr(label, "com.claudepanel.pushdown")) threadTag = 'P';
+    }
+
+    fprintf(pdLog, "%s.%03ld [%c] ", tbuf, ts.tv_nsec / 1000000, threadTag);
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(pdLog, fmt, ap);
+    va_end(ap);
+    fputc('\n', pdLog);
+    fflush(pdLog);
+}
+
 // Forward declarations
 static void sweepAllRunningApps(void);
 static void detachObserverFromApp(pid_t pid);
@@ -113,19 +173,24 @@ static void initPushdownIfNeeded(void) {
 }
 
 static void pushWindow(AXUIElementRef win) {
-    if (!pushdownEnabled) return;
+    pLog("pushWindow enter win=%p", (void*)win);
+    if (!pushdownEnabled) { pLog("pushWindow exit (!enabled)"); return; }
 
     // 1. Skip if kAXRoleAttribute != kAXWindowRole
     CFTypeRef role = NULL;
-    if (AXUIElementCopyAttributeValue(win, kAXRoleAttribute, &role) == kAXErrorSuccess) {
+    AXError roleErr = AXUIElementCopyAttributeValue(win, kAXRoleAttribute, &role);
+    pLog("  role copy err=%d val=%p", (int)roleErr, role);
+    if (roleErr == kAXErrorSuccess) {
         if (role) {
             BOOL isWindow = CFEqual(role, kAXWindowRole);
             CFRelease(role);
-            if (!isWindow) return;
+            if (!isWindow) { pLog("pushWindow exit (role!=window)"); return; }
         } else {
+            pLog("pushWindow exit (role==NULL)");
             return;
         }
     } else {
+        pLog("pushWindow exit (role err)");
         return;
     }
 
@@ -158,7 +223,9 @@ static void pushWindow(AXUIElementRef win) {
     // 4. Read kAXPositionAttribute -> CGPoint p, kAXSizeAttribute -> CGSize s
     CGPoint p = CGPointZero;
     CFTypeRef posVal = NULL;
-    if (AXUIElementCopyAttributeValue(win, kAXPositionAttribute, &posVal) == kAXErrorSuccess) {
+    AXError posErr = AXUIElementCopyAttributeValue(win, kAXPositionAttribute, &posVal);
+    pLog("  pos copy err=%d val=%p", (int)posErr, posVal);
+    if (posErr == kAXErrorSuccess) {
         if (posVal) {
             if (CFGetTypeID(posVal) == AXValueGetTypeID()) {
                 AXValueGetValue(posVal, kAXValueTypeCGPoint, &p);
@@ -166,12 +233,15 @@ static void pushWindow(AXUIElementRef win) {
             CFRelease(posVal);
         }
     } else {
+        pLog("pushWindow exit (pos err)");
         return;
     }
 
     CGSize s = CGSizeZero;
     CFTypeRef sizeVal = NULL;
-    if (AXUIElementCopyAttributeValue(win, kAXSizeAttribute, &sizeVal) == kAXErrorSuccess) {
+    AXError sizeErr = AXUIElementCopyAttributeValue(win, kAXSizeAttribute, &sizeVal);
+    pLog("  size copy err=%d val=%p", (int)sizeErr, sizeVal);
+    if (sizeErr == kAXErrorSuccess) {
         if (sizeVal) {
             if (CFGetTypeID(sizeVal) == AXValueGetTypeID()) {
                 AXValueGetValue(sizeVal, kAXValueTypeCGSize, &s);
@@ -179,30 +249,38 @@ static void pushWindow(AXUIElementRef win) {
             CFRelease(sizeVal);
         }
     } else {
+        pLog("pushWindow exit (size err)");
         return;
     }
+
+    pLog("  p=(%.1f,%.1f) s=(%.1f,%.1f) bar=(%d,%d,%d,%d) barH=%d",
+         p.x, p.y, s.width, s.height,
+         barLeft, barTop, barWidth, barMonHeight, barHeightVal);
 
     // 5. Monitor filter: only push if window's center is inside the bar's monitor rect
     CGFloat cx = p.x + s.width / 2.0;
     CGFloat cy = p.y + s.height / 2.0;
     if (cx < barLeft || cx >= barLeft + barWidth || cy < barTop || cy >= barTop + barMonHeight) {
+        pLog("pushWindow exit (off-monitor)");
         return;
     }
 
     // 6. Pushdown calculations
     CGFloat barBottom = barTop + barHeightVal;
     if (p.y >= barBottom) {
-        // Under the bar, nothing to do
+        pLog("pushWindow exit (under-bar)");
         return;
     }
 
     CGFloat delta = barBottom - p.y;
     pushesCount++;
+    pLog("  PUSH delta=%.1f newY=%.1f", delta, barBottom);
 
     CGPoint newPos = CGPointMake(p.x, barBottom);
     AXValueRef newPosVal = AXValueCreate(kAXValueTypeCGPoint, &newPos);
     if (newPosVal) {
-        AXUIElementSetAttributeValue(win, kAXPositionAttribute, newPosVal);
+        AXError setErr = AXUIElementSetAttributeValue(win, kAXPositionAttribute, newPosVal);
+        pLog("  setPos err=%d", (int)setErr);
         CFRelease(newPosVal);
     }
 
@@ -211,7 +289,8 @@ static void pushWindow(AXUIElementRef win) {
     CGSize newSize = CGSizeMake(s.width, newH);
     AXValueRef newSizeVal = AXValueCreate(kAXValueTypeCGSize, &newSize);
     if (newSizeVal) {
-        AXUIElementSetAttributeValue(win, kAXSizeAttribute, newSizeVal);
+        AXError setErr = AXUIElementSetAttributeValue(win, kAXSizeAttribute, newSizeVal);
+        pLog("  setSize err=%d newH=%.1f", (int)setErr, newH);
         CFRelease(newSizeVal);
     }
 
@@ -232,6 +311,7 @@ static void pushWindow(AXUIElementRef win) {
     }
 
     if (retry) {
+        pLog("  retry scheduled win=%p", (void*)win);
         // The block is queued for +100ms but the caller's CFRetain on `win`
         // (held by scheduleThrottledPush's timer handler) is released as soon
         // as pushWindow returns — so we have to own a retain for the lifetime
@@ -241,8 +321,10 @@ static void pushWindow(AXUIElementRef win) {
         // when a window is being dragged toward the bar edge).
         CFRetain(win);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(100 * NSEC_PER_MSEC)), pushdownQueue, ^{
+            pLog("  retry fire win=%p", (void*)win);
             if (!pushdownEnabled) {
                 CFRelease(win);
+                pLog("  retry exit (!enabled)");
                 return;
             }
 
@@ -317,6 +399,7 @@ static void sweepAppWindows(AXUIElementRef app) {
 
 static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
     NSNumber* key = @(pid);
+    pLog("schedThrottled pid=%d win=%p", (int)pid, (void*)win);
 
     // Park the most recent window in pendingWins for this pid. The block
     // below reads from this dict at fire time rather than capturing `win`
@@ -329,7 +412,10 @@ static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
     NSValue* prev = pendingWins[key];
     if (prev) {
         AXUIElementRef prevWin = (AXUIElementRef)[prev pointerValue];
-        if (prevWin) CFRelease(prevWin);
+        if (prevWin) {
+            pLog("  replacing pending prev=%p", (void*)prevWin);
+            CFRelease(prevWin);
+        }
     }
     CFRetain(win);
     pendingWins[key] = [NSValue valueWithPointer:win];
@@ -339,14 +425,17 @@ static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
     dispatch_source_t timer = activeTimers[key];
     if (timer) {
         // Existing throttle — slide the deadline.
+        pLog("  reschedule existing timer pid=%d", (int)pid);
         dispatch_source_set_timer(timer, startTime, DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
         return;
     }
 
+    pLog("  create timer pid=%d", (int)pid);
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, pushdownQueue);
     activeTimers[key] = timer;
 
     dispatch_source_set_event_handler(timer, ^{
+        pLog("timer fire pid=%d", (int)pid);
         NSValue* val = pendingWins[key];
         AXUIElementRef latest = val ? (AXUIElementRef)[val pointerValue] : NULL;
         if (latest) {
@@ -355,6 +444,8 @@ static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
             }
             CFRelease(latest);
             [pendingWins removeObjectForKey:key];
+        } else {
+            pLog("  timer fire pid=%d had NO pending entry", (int)pid);
         }
         dispatch_source_cancel(timer);
         [activeTimers removeObjectForKey:key];
@@ -365,6 +456,15 @@ static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
 }
 
 static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringRef notification, void* refcon) {
+    // Logged BEFORE retain so we know we entered even if retain or dispatch
+    // fails. notification is a static system constant — safe to %@ via NSLog
+    // shape; we keep it as a C string by extracting via CFStringGetCStringPtr
+    // when possible.
+    const char* nname = NULL;
+    if (notification) {
+        nname = CFStringGetCStringPtr(notification, kCFStringEncodingUTF8);
+    }
+    pLog("axCallback notif=%s elem=%p", nname ? nname : "?", (void*)element);
     CFRetain(element);
     dispatch_async(pushdownQueue, ^{
         if (pushdownEnabled) {
@@ -373,6 +473,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             if (CFEqual(notification, kAXWindowMovedNotification) || CFEqual(notification, kAXWindowResizedNotification)) {
                 scheduleThrottledPush(pid, element);
             } else {
+                pLog("  axCallback unhandled notif on elem=%p — direct pushWindow", (void*)element);
                 pushWindow(element);
             }
         }
@@ -381,9 +482,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 }
 
 static void attachObserverToApp(pid_t pid, NSString* bundleID) {
-    if (!pushdownEnabled) return;
+    pLog("attachObserver pid=%d bid=%s", (int)pid, [bundleID UTF8String] ?: "?");
+    if (!pushdownEnabled) { pLog("  attachObserver bail (!enabled)"); return; }
 
-    if (pid == getpid()) return;
+    if (pid == getpid()) { pLog("  attachObserver bail (self pid)"); return; }
 
     NSArray* skipList = @[
         @"com.apple.dock",
@@ -413,6 +515,7 @@ static void attachObserverToApp(pid_t pid, NSString* bundleID) {
 
     AXObserverRef obs = NULL;
     AXError err = AXObserverCreate(pid, axCallback, &obs);
+    pLog("  AXObserverCreate pid=%d err=%d obs=%p", (int)pid, (int)err, (void*)obs);
     if (err != kAXErrorSuccess || !obs) {
         CFRelease(appElem);
         lastErrStr = [NSString stringWithFormat:@"AXObserverCreate failed for pid %d: %d", (int)pid, (int)err];
@@ -436,16 +539,20 @@ static void attachObserverToApp(pid_t pid, NSString* bundleID) {
     ];
 
     for (NSString* notif in notifications) {
-        AXObserverAddNotification(obs, appElem, (__bridge CFStringRef)notif, NULL);
+        AXError addErr = AXObserverAddNotification(obs, appElem, (__bridge CFStringRef)notif, NULL);
+        pLog("  addNotification %s pid=%d err=%d", [notif UTF8String], (int)pid, (int)addErr);
     }
 
     CFRunLoopSourceRef src = AXObserverGetRunLoopSource(obs);
+    pLog("  getRunLoopSource pid=%d src=%p", (int)pid, (void*)src);
     if (src) {
         CFRunLoopAddSource(CFRunLoopGetMain(), src, kCFRunLoopDefaultMode);
     }
 
     observedApps[key] = [NSValue valueWithPointer:obs];
+    pLog("  attachObserver pid=%d -> sweepAppWindows", (int)pid);
     sweepAppWindows(appElem);
+    pLog("  attachObserver pid=%d done", (int)pid);
 
     CFRelease(appElem);
 }
@@ -480,18 +587,17 @@ static void detachObserverFromApp(pid_t pid) {
 }
 
 static void sweepAllRunningApps(void) {
+    pLog("sweepAllRunningApps start");
     // NSWorkspace.runningApplications is thread-safe; calling it directly
-    // from the pushdown queue is what rc8 did and didn't crash. The earlier
-    // attempt to hop through the main thread regressed launch — most likely
-    // because the outer platformPushdownEnable already holds the queue via
-    // dispatch_sync and adding another dispatch hop changed timing in a way
-    // we can't fully account for without a crash log.
+    // from the pushdown queue is what rc8 did and didn't crash.
     NSArray* apps = [[NSWorkspace sharedWorkspace] runningApplications];
+    pLog("  %lu running apps", (unsigned long)apps.count);
     for (NSRunningApplication* app in apps) {
         if (app.activationPolicy == NSApplicationActivationPolicyRegular) {
             attachObserverToApp(app.processIdentifier, app.bundleIdentifier);
         }
     }
+    pLog("sweepAllRunningApps done");
 }
 
 static void startTrustTimer(void) {
@@ -535,6 +641,8 @@ static int platformAXRequestTrust(void) {
 
 static int platformPushdownEnable(int left, int top, int width, int height, int barHeight) {
     initPushdownIfNeeded();
+    pLog("platformPushdownEnable left=%d top=%d w=%d h=%d barH=%d",
+         left, top, width, height, barHeight);
 
     __block BOOL trusted = NO;
     dispatch_sync(pushdownQueue, ^{
