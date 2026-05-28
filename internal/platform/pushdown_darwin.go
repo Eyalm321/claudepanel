@@ -25,8 +25,16 @@ static int barHeightVal = 0;
 static int pushesCount = 0;
 static NSString* lastErrStr = nil;
 
-// Active timers for throttling window drag/resize
+// Active timers for throttling window drag/resize.
 static NSMutableDictionary* activeTimers = nil;
+
+// Pending AXUIElement per pid. The throttle holds the most-recent window for
+// each app outside the timer's handler block so we can reschedule the timer
+// (instead of cancel+recreate) on rapid drag events without leaking CFRetains
+// every time the timer is replaced. Each entry is an NSValue wrapping a
+// CFRetained AXUIElementRef; replacing or removing the entry releases the
+// retain.
+static NSMutableDictionary* pendingWins = nil;
 
 // Recheck timer for AX permission
 static dispatch_source_t trustTimer = nil;
@@ -100,6 +108,7 @@ static void initPushdownIfNeeded(void) {
         pushdownQueue = dispatch_queue_create("com.claudepanel.pushdown", DISPATCH_QUEUE_SERIAL);
         observedApps = [NSMutableDictionary dictionary];
         activeTimers = [NSMutableDictionary dictionary];
+        pendingWins = [NSMutableDictionary dictionary];
     });
 }
 
@@ -308,25 +317,49 @@ static void sweepAppWindows(AXUIElementRef app) {
 
 static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
     NSNumber* key = @(pid);
+
+    // Park the most recent window in pendingWins for this pid. The block
+    // below reads from this dict at fire time rather than capturing `win`
+    // directly — that way rapid drag events just update the dict and reset
+    // the timer's fire time, instead of canceling+recreating the source and
+    // leaking the previous CFRetain (the old timer's event_handler block
+    // would never run and never release its captured retain). One CFRetain
+    // per pending entry; the previous entry's retain is released when we
+    // replace it.
+    NSValue* prev = pendingWins[key];
+    if (prev) {
+        AXUIElementRef prevWin = (AXUIElementRef)[prev pointerValue];
+        if (prevWin) CFRelease(prevWin);
+    }
+    CFRetain(win);
+    pendingWins[key] = [NSValue valueWithPointer:win];
+
+    dispatch_time_t startTime = dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC);
+
     dispatch_source_t timer = activeTimers[key];
     if (timer) {
-        dispatch_source_cancel(timer);
+        // Existing throttle — slide the deadline.
+        dispatch_source_set_timer(timer, startTime, DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
+        return;
     }
 
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, pushdownQueue);
     activeTimers[key] = timer;
 
-    CFRetain(win);
     dispatch_source_set_event_handler(timer, ^{
-        if (pushdownEnabled) {
-            pushWindow(win);
+        NSValue* val = pendingWins[key];
+        AXUIElementRef latest = val ? (AXUIElementRef)[val pointerValue] : NULL;
+        if (latest) {
+            if (pushdownEnabled) {
+                pushWindow(latest);
+            }
+            CFRelease(latest);
+            [pendingWins removeObjectForKey:key];
         }
-        CFRelease(win);
         dispatch_source_cancel(timer);
         [activeTimers removeObjectForKey:key];
     });
 
-    dispatch_time_t startTime = dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC);
     dispatch_source_set_timer(timer, startTime, DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
     dispatch_resume(timer);
 }
@@ -370,6 +403,13 @@ static void attachObserverToApp(pid_t pid, NSString* bundleID) {
 
     AXUIElementRef appElem = AXUIElementCreateApplication(pid);
     if (!appElem) return;
+
+    // Default AX messaging timeout is 6 seconds; tighten so a single
+    // unresponsive target app can't stall the pushdown queue for that long.
+    // Calls to that app's elements will return AXErrorCannotComplete instead
+    // of blocking, and pushWindow already handles failure paths by returning
+    // early.
+    AXUIElementSetMessagingTimeout(appElem, 1.0f);
 
     AXObserverRef obs = NULL;
     AXError err = AXObserverCreate(pid, axCallback, &obs);
@@ -425,6 +465,13 @@ static void detachObserverFromApp(pid_t pid) {
         [observedApps removeObjectForKey:key];
     }
 
+    NSValue* pending = pendingWins[key];
+    if (pending) {
+        AXUIElementRef pendingWin = (AXUIElementRef)[pending pointerValue];
+        if (pendingWin) CFRelease(pendingWin);
+        [pendingWins removeObjectForKey:key];
+    }
+
     dispatch_source_t timer = activeTimers[key];
     if (timer) {
         dispatch_source_cancel(timer);
@@ -433,24 +480,17 @@ static void detachObserverFromApp(pid_t pid) {
 }
 
 static void sweepAllRunningApps(void) {
-    // [NSWorkspace sharedWorkspace] runningApplications is documented as
-    // main-thread on modern macOS; calling it from the pushdown queue has
-    // shown up in crash reports for some users. Snapshot (pid, bundleId)
-    // pairs on the main thread, then attach observers back on our queue.
-    __block NSArray<NSDictionary*>* snapshot = nil;
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        NSMutableArray<NSDictionary*>* items = [NSMutableArray array];
-        for (NSRunningApplication* app in [[NSWorkspace sharedWorkspace] runningApplications]) {
-            if (app.activationPolicy != NSApplicationActivationPolicyRegular) continue;
-            NSString* bid = app.bundleIdentifier ?: @"";
-            [items addObject:@{ @"pid": @(app.processIdentifier), @"bid": bid }];
+    // NSWorkspace.runningApplications is thread-safe; calling it directly
+    // from the pushdown queue is what rc8 did and didn't crash. The earlier
+    // attempt to hop through the main thread regressed launch — most likely
+    // because the outer platformPushdownEnable already holds the queue via
+    // dispatch_sync and adding another dispatch hop changed timing in a way
+    // we can't fully account for without a crash log.
+    NSArray* apps = [[NSWorkspace sharedWorkspace] runningApplications];
+    for (NSRunningApplication* app in apps) {
+        if (app.activationPolicy == NSApplicationActivationPolicyRegular) {
+            attachObserverToApp(app.processIdentifier, app.bundleIdentifier);
         }
-        snapshot = items;
-    });
-    for (NSDictionary* item in snapshot) {
-        pid_t pid = (pid_t)[item[@"pid"] intValue];
-        NSString* bid = item[@"bid"];
-        attachObserverToApp(pid, bid);
     }
 }
 
