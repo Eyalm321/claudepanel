@@ -64,6 +64,43 @@ void platformDockToMonitor(void* nsWindow, int left, int top, int width, int hei
         CGFloat y = visible.origin.y + visible.size.height - (CGFloat)height;
         NSRect frame = NSMakeRect((CGFloat)left, y, (CGFloat)width, (CGFloat)height);
         [w setFrame:frame display:YES];
+        // Mirror the Windows DockToMonitor (SWP_SHOWWINDOW): explicitly order
+        // the window in. The Wails options set Hidden:true so the framework
+        // defers Show() until WindowDidBecomeKey, which an Accessory-policy
+        // app never receives without user interaction — without this, the bar
+        // is positioned correctly but stays invisible on first launch.
+        [w orderFront:nil];
+    });
+}
+
+void platformShowWindow(void* nsWindow) {
+    runOnMain(^{
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
+        if (!w) return;
+        [w orderFront:nil];
+    });
+}
+
+void platformHideWindow(void* nsWindow) {
+    runOnMain(^{
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
+        if (!w) return;
+        [w orderOut:nil];
+    });
+}
+
+void platformMoveWindow(void* nsWindow, int x, int y) {
+    runOnMain(^{
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
+        if (!w) return;
+        NSScreen* main = [NSScreen mainScreen];
+        if (!main) return;
+        // Caller uses top-left-origin Y (matching Windows). Convert to
+        // Cocoa's bottom-left-origin: flipY = primaryHeight - y - frameHeight.
+        NSRect f = [w frame];
+        CGFloat primaryH = main.frame.size.height;
+        CGFloat cocoaY = primaryH - (CGFloat)y - f.size.height;
+        [w setFrameOrigin:NSMakePoint((CGFloat)x, cocoaY)];
     });
 }
 
@@ -131,12 +168,17 @@ func GetCursorPos() (int, int) { return -1, -1 }
 // ResetDwmFrame is a Windows-only concept; no-op elsewhere.
 func ResetDwmFrame(hwnd uintptr) {}
 
-// HideWindow / ShowWindow no-op on macOS for now.
-func HideWindow(hwnd uintptr) {}
-func ShowWindow(hwnd uintptr) {}
+func HideWindow(hwnd uintptr) {
+	C.platformHideWindow(unsafe.Pointer(hwnd))
+}
 
-// MoveWindow no-op on macOS for now.
-func MoveWindow(hwnd uintptr, x, y int) {}
+func ShowWindow(hwnd uintptr) {
+	C.platformShowWindow(unsafe.Pointer(hwnd))
+}
+
+func MoveWindow(hwnd uintptr, x, y int) {
+	C.platformMoveWindow(unsafe.Pointer(hwnd), C.int(x), C.int(y))
+}
 
 // SetWindowClipTop no-op on macOS for now.
 func SetWindowClipTop(hwnd uintptr, width, height, topClip int) {}
