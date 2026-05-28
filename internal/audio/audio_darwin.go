@@ -41,13 +41,24 @@ func goDarwinPlayerCallback(goPlayer unsafe.Pointer, stateStr *C.char, errStr *C
 	hPtr := (*cgo.Handle)(goPlayer)
 	player := hPtr.Value().(*DarwinPlayer)
 
+	// Copy the C strings into Go strings *before* we leave the C-callable
+	// stack frame — they may be invalidated as soon as we return. GoString
+	// copies, so the goroutine below holds independent storage.
 	state := State(C.GoString(stateStr))
 	var err string
 	if errStr != nil {
 		err = C.GoString(errStr)
 	}
 
-	player.emit(Event{
+	// Dispatch the emit on a fresh goroutine to break any synchronous chain
+	// back into Go state. AVFoundation delivers KVO synchronously on the
+	// thread that mutated the observed property — so [AVPlayer play], called
+	// from Controller.PlayVideo while it holds c.mu, re-enters this callback
+	// → handlePlayerEvent → c.mu.Lock() on the SAME thread. On macOS the
+	// Wails RPC dispatch is the main thread, so the whole UI hangs while
+	// AVPlayer's worker keeps the audio going. Async breaks the chain; the
+	// goroutine waits naturally for c.mu instead of deadlocking on itself.
+	go player.emit(Event{
 		State: state,
 		Err:   err,
 	})
