@@ -101,9 +101,16 @@ func ComputeBarData(
 	}
 	status := computeStatus(sessions)
 
+	// Trust the live rate-limit data when it's available: apiUsage.LimitExceeded
+	// is recomputed each read from rate_limits.json's WeeklyPercent so it
+	// correctly flips back to false after a reset. The notification file's
+	// triggered flag is sticky — Claude Code writes it on first breach and
+	// doesn't clear it on rollover — so falling back to it after a reset
+	// keeps the bar stuck red. Only consult notifs when apiUsage is nil
+	// (statusline wrapper hasn't produced rate_limits.json yet).
 	limitExceeded := false
-	if apiUsage != nil && apiUsage.LimitExceeded {
-		limitExceeded = true
+	if apiUsage != nil {
+		limitExceeded = apiUsage.LimitExceeded
 	} else if notifs != nil && notifs.ExceedMaxLimit != nil {
 		limitExceeded = notifs.ExceedMaxLimit.Triggered
 	}
