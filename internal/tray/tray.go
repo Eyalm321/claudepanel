@@ -2,7 +2,6 @@ package tray
 
 import (
 	"fmt"
-	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -43,11 +42,12 @@ func (m *Manager) Build(
 ) {
 	m.tray = app.SystemTray.New()
 
-	if runtime.GOOS == "darwin" {
-		m.tray.SetTemplateIcon(iconBytes)
-	} else {
-		m.tray.SetIcon(iconBytes)
-	}
+	// SetIcon on every platform — SetTemplateIcon strips color and tints the
+	// alpha channel to match the menu-bar theme. Our brand icon is a fully
+	// opaque rounded square (black background + orange invader); rendered as
+	// a template it collapses into a single solid blob and looks like a
+	// missing icon. The v1.0.x line (pre-Wails-v3) shipped this colored.
+	m.tray.SetIcon(iconBytes)
 
 	m.menu = app.NewMenu()
 	m.menu.Add(fmt.Sprintf("Claude Panel %s", version)).SetEnabled(false)
