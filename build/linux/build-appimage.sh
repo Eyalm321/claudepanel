@@ -38,4 +38,11 @@ chmod +x "$APPDIR/AppRun"
 
 ARCH=x86_64 appimagetool "$APPDIR" "$OUT_DIR/ClaudePanel-x86_64.AppImage"
 
+# Remove the staging tree so OUT_DIR only contains the AppImage. Without
+# this the AppDir and all its bundled GStreamer plugins / AppRun / icon /
+# .desktop survive into dist/, the CI artifact upload sweeps them all up,
+# and the release-publish step flattens them into individual top-level
+# release assets ("junk" alongside the real installers).
+rm -rf "$APPDIR"
+
 echo "Built $OUT_DIR/ClaudePanel-x86_64.AppImage"
