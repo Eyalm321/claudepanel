@@ -456,28 +456,51 @@ static void scheduleThrottledPush(pid_t pid, AXUIElementRef win) {
 }
 
 static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringRef notification, void* refcon) {
-    // Logged BEFORE retain so we know we entered even if retain or dispatch
-    // fails. notification is a static system constant — safe to %@ via NSLog
-    // shape; we keep it as a C string by extracting via CFStringGetCStringPtr
-    // when possible.
-    const char* nname = NULL;
+    // Snapshot the notification name into a stack buffer *before* anything
+    // else, so even if `notification` is invalid by the time the dispatched
+    // block reads it, this log line and the comparison below use a copy we
+    // own. Apple's AXObserverCallback contract is that `notification` is a
+    // borrowed reference for the duration of this callback; on macOS 26.x
+    // we've seen evidence (rc11 crash log: SIGTRAP between this pLog and
+    // the block's first statement) that escaping it without a CFRetain is
+    // unsafe even with a CFRetain on `element`.
+    char nbuf[64] = "?";
     if (notification) {
-        nname = CFStringGetCStringPtr(notification, kCFStringEncodingUTF8);
+        const char* nname = CFStringGetCStringPtr(notification, kCFStringEncodingUTF8);
+        if (nname) {
+            strlcpy(nbuf, nname, sizeof(nbuf));
+        } else {
+            CFStringGetCString(notification, nbuf, sizeof(nbuf), kCFStringEncodingUTF8);
+        }
     }
-    pLog("axCallback notif=%s elem=%p", nname ? nname : "?", (void*)element);
+    pLog("axCallback notif=%s elem=%p", nbuf, (void*)element);
+
+    // Decide here, on the AX callback thread, which path to take — using the
+    // already-snapshotted notification name — so the dispatched block never
+    // touches `notification` again.
+    int kind = 0; // 1=moved, 2=resized, 0=other
+    if (strcmp(nbuf, "AXWindowMoved") == 0)        kind = 1;
+    else if (strcmp(nbuf, "AXWindowResized") == 0) kind = 2;
+
     CFRetain(element);
     dispatch_async(pushdownQueue, ^{
-        if (pushdownEnabled) {
-            pid_t pid = 0;
-            AXUIElementGetPid(element, &pid);
-            if (CFEqual(notification, kAXWindowMovedNotification) || CFEqual(notification, kAXWindowResizedNotification)) {
-                scheduleThrottledPush(pid, element);
-            } else {
-                pLog("  axCallback unhandled notif on elem=%p — direct pushWindow", (void*)element);
-                pushWindow(element);
-            }
+        pLog("  dispatch enter elem=%p kind=%d", (void*)element, kind);
+        if (!pushdownEnabled) {
+            pLog("  dispatch exit (!enabled)");
+            CFRelease(element);
+            return;
+        }
+        pid_t pid = 0;
+        AXError pidErr = AXUIElementGetPid(element, &pid);
+        pLog("  dispatch getPid err=%d pid=%d", (int)pidErr, (int)pid);
+        if (kind == 1 || kind == 2) {
+            scheduleThrottledPush(pid, element);
+        } else {
+            pLog("  dispatch unhandled kind=%d -> direct pushWindow", kind);
+            pushWindow(element);
         }
         CFRelease(element);
+        pLog("  dispatch done elem=%p", (void*)element);
     });
 }
 
