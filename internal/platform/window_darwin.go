@@ -104,6 +104,21 @@ void platformMoveWindow(void* nsWindow, int x, int y) {
     });
 }
 
+// Cursor position in our top-left-origin convention (matching mon.Top/Left).
+// NSEvent.mouseLocation returns Cocoa bottom-left coords on the primary
+// screen; convert by flipping against the primary screen's height. Works
+// from any app activation policy, including Accessory.
+void platformGetCursorPos(int* outX, int* outY) {
+    runOnMain(^{
+        NSPoint loc = [NSEvent mouseLocation];
+        NSScreen* main = [NSScreen mainScreen];
+        if (!main) { *outX = -1; *outY = -1; return; }
+        CGFloat primaryH = main.frame.size.height;
+        *outX = (int)loc.x;
+        *outY = (int)(primaryH - loc.y);
+    });
+}
+
 void platformGetWindowSize(void* nsWindow, int* outLeft, int* outTop, int* outWidth, int* outHeight) {
     runOnMain(^{
         NSWindow* w = (__bridge NSWindow*)nsWindow;
@@ -159,11 +174,17 @@ func SetOpacity(hwnd uintptr, opacity float64) {
 	C.platformSetOpacity(unsafe.Pointer(hwnd), C.double(opacity))
 }
 
-// AutoHideSupported is false on macOS.
-func AutoHideSupported() bool { return false }
+// AutoHideSupported gates the slide-up auto-hide animation and the
+// click-through-while-collapsed behaviour. The macOS branch now has
+// MoveWindow / Show / Hide / GetCursorPos wired up, so the hover-watcher
+// in app.go can drive the same expand/collapse loop as Windows.
+func AutoHideSupported() bool { return true }
 
-// GetCursorPos is a stub on macOS.
-func GetCursorPos() (int, int) { return -1, -1 }
+func GetCursorPos() (int, int) {
+	var x, y C.int
+	C.platformGetCursorPos(&x, &y)
+	return int(x), int(y)
+}
 
 // ResetDwmFrame is a Windows-only concept; no-op elsewhere.
 func ResetDwmFrame(hwnd uintptr) {}

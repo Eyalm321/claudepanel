@@ -37,7 +37,12 @@ CMonitor platformGetScreen(int idx) {
     m.top = (int)(primaryH - frame.origin.y - frame.size.height);
     m.width = (int)frame.size.width;
     m.height = (int)frame.size.height;
-    m.physWidth = (int)(frame.size.width * scale);
+    // On macOS, all the consumers of PhysWidth (window framing, hover hit
+    // detection) work in points, not pixels — NSWindow.setFrame takes points,
+    // NSEvent.mouseLocation returns points. Reporting points here keeps the
+    // shared code in app.go correct on Retina displays without sprinkling
+    // OS checks. Windows still reports true pixels.
+    m.physWidth = (int)frame.size.width;
     m.dpiScale = (double)scale;
     m.isPrimary = [s isEqual:mainScreen] ? 1 : 0;
     NSString* name = [s respondsToSelector:@selector(localizedName)] ? [s performSelector:@selector(localizedName)] : nil;

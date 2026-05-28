@@ -4,62 +4,26 @@
         <key>CFBundlePackageType</key>
         <string>APPL</string>
         <key>CFBundleName</key>
-        <string>{{.Info.ProductName}}</string>
+        <string>Claude Panel</string>
         <key>CFBundleExecutable</key>
-        <string>{{.OutputFilename}}</string>
+        <string>ClaudePanel</string>
         <key>CFBundleIdentifier</key>
-        <string>com.wails.{{.Name}}</string>
+        <string>com.eyalm321.claudepanel</string>
         <key>CFBundleVersion</key>
-        <string>{{.Info.ProductVersion}}</string>
-        <key>CFBundleGetInfoString</key>
-        <string>{{.Info.Comments}}</string>
+        <string>2.0.0</string>
         <key>CFBundleShortVersionString</key>
-        <string>{{.Info.ProductVersion}}</string>
+        <string>2.0.0</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>
-        <string>10.13.0</string>
+        <string>12.0</string>
         <key>NSHighResolutionCapable</key>
-        <string>true</string>
+        <true/>
+        <key>LSUIElement</key>
+        <true/>
         <key>NSAccessibilityUsageDescription</key>
-        <string>ClaudePanel reserves a strip at the top of the screen for the bar by repositioning windows that would overlap it.</string>
+        <string>Claude Panel reserves a strip at the top of the screen and repositions windows that would overlap it.</string>
         <key>NSHumanReadableCopyright</key>
-        <string>{{.Info.Copyright}}</string>
-        {{if .Info.FileAssociations}}
-        <key>CFBundleDocumentTypes</key>
-        <array>
-          {{range .Info.FileAssociations}}
-          <dict>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-              <string>{{.Ext}}</string>
-            </array>
-            <key>CFBundleTypeName</key>
-            <string>{{.Name}}</string>
-            <key>CFBundleTypeRole</key>
-            <string>{{.Role}}</string>
-            <key>CFBundleTypeIconFile</key>
-            <string>{{.IconName}}</string>
-          </dict>
-          {{end}}
-        </array>
-        {{end}}
-        {{if .Info.Protocols}}
-        <key>CFBundleURLTypes</key>
-        <array>
-          {{range .Info.Protocols}}
-            <dict>
-                <key>CFBundleURLName</key>
-                <string>com.wails.{{.Scheme}}</string>
-                <key>CFBundleURLSchemes</key>
-                <array>
-                    <string>{{.Scheme}}</string>
-                </array>
-                <key>CFBundleTypeRole</key>
-                <string>{{.Role}}</string>
-            </dict>
-          {{end}}
-        </array>
-        {{end}}
+        <string>Claude Panel</string>
     </dict>
 </plist>
