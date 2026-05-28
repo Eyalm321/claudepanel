@@ -86,6 +86,13 @@ func (a *App) domReady(ctx context.Context) {
 
 	if a.hwnd != 0 && len(a.monitors) > 0 {
 		platform.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight, a.cfg.AppBarMode)
+		if a.cfg.AppBarMode && a.cfg.Pinned {
+			go func() {
+				if err := platform.PushdownEnable(a.monitors[a.cfg.Monitor], a.cfg.BarHeight); err != nil {
+					log.Printf("[pushdown] Enable failed: %v", err)
+				}
+			}()
+		}
 		platform.SetOpacity(a.hwnd, a.cfg.Opacity)
 		if a.cfg.Pinned {
 			a.barExpanded = true
@@ -274,6 +281,7 @@ func (a *App) applyClickThrough() {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	platform.PushdownDisable()
 	if a.hwnd != 0 {
 		platform.RemoveAppBar(a.hwnd)
 	}
@@ -364,6 +372,16 @@ func (a *App) SaveConfig(cfg config.Config) error {
 			}
 		}
 		platform.SetOpacity(a.hwnd, cfg.Opacity)
+
+		if cfg.AppBarMode && cfg.Pinned {
+			go func() {
+				if err := platform.PushdownEnable(a.monitors[cfg.Monitor], cfg.BarHeight); err != nil {
+					log.Printf("[pushdown] Enable failed: %v", err)
+				}
+			}()
+		} else {
+			platform.PushdownDisable()
+		}
 	}
 	runtime.EventsEmit(a.ctx, "config:changed")
 	return nil
@@ -403,6 +421,7 @@ func (a *App) SetMonitor(index int) error {
 	}
 	if a.hwnd != 0 {
 		platform.DockToMonitor(a.hwnd, a.monitors[index], a.cfg.BarHeight, a.cfg.AppBarMode)
+		platform.PushdownReconfigure(a.monitors[index], a.cfg.BarHeight)
 	}
 	if a.trayMgr != nil {
 		a.trayMgr.SetMonitorChecked(index)
@@ -453,6 +472,15 @@ func (a *App) SetPinned(pinned bool) error {
 	if a.hwnd != 0 && len(a.monitors) > 0 {
 		platform.RemoveAppBar(a.hwnd)
 		platform.DockToMonitor(a.hwnd, a.monitors[a.cfg.Monitor], a.cfg.BarHeight, pinned)
+		if pinned {
+			go func() {
+				if err := platform.PushdownEnable(a.monitors[a.cfg.Monitor], a.cfg.BarHeight); err != nil {
+					log.Printf("[pushdown] Enable failed: %v", err)
+				}
+			}()
+		} else {
+			platform.PushdownDisable()
+		}
 		a.leftBarAt = time.Time{}
 		// Pinned ⇒ always expanded. Unpinned ⇒ initial state follows the
 		// cursor (the user just clicked the pin icon, so the cursor is on the
@@ -480,3 +508,9 @@ func (a *App) SetEditorOpen(open bool) {
 		a.checkHover()
 	}
 }
+
+// GetPushdownStats returns active diagnostics for macOS window pushdown.
+func (a *App) GetPushdownStats() platform.PushdownStats {
+	return platform.GetPushdownStats()
+}
+

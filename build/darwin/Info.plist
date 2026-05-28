@@ -21,6 +21,8 @@
         <string>10.13.0</string>
         <key>NSHighResolutionCapable</key>
         <string>true</string>
+        <key>NSAccessibilityUsageDescription</key>
+        <string>ClaudePanel reserves a strip at the top of the screen for the bar by repositioning windows that would overlap it.</string>
         <key>NSHumanReadableCopyright</key>
         <string>{{.Info.Copyright}}</string>
         {{if .Info.FileAssociations}}

@@ -14,3 +14,13 @@ type MonitorInfo struct {
 	IsPrimary bool    `json:"isPrimary"`
 	Name      string  `json:"name"`
 }
+
+// PushdownStats contains diagnostic information about macOS window pushdown.
+type PushdownStats struct {
+	Enabled           bool   `json:"enabled"`
+	Trusted           bool   `json:"trusted"`
+	ObservedApps      int    `json:"observedApps"`
+	PushesThisSession int    `json:"pushesThisSession"`
+	LastError         string `json:"lastError"`
+}
+
