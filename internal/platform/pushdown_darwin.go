@@ -223,8 +223,19 @@ static void pushWindow(AXUIElementRef win) {
     }
 
     if (retry) {
+        // The block is queued for +100ms but the caller's CFRetain on `win`
+        // (held by scheduleThrottledPush's timer handler) is released as soon
+        // as pushWindow returns — so we have to own a retain for the lifetime
+        // of this deferred block ourselves. Without it, `win` is freed before
+        // the dispatch_after runs and the AXUIElement* calls below dereference
+        // freed memory (= crash whenever the retry path triggers, i.e. exactly
+        // when a window is being dragged toward the bar edge).
+        CFRetain(win);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(100 * NSEC_PER_MSEC)), pushdownQueue, ^{
-            if (!pushdownEnabled) return;
+            if (!pushdownEnabled) {
+                CFRelease(win);
+                return;
+            }
 
             CGPoint p2 = CGPointZero;
             CFTypeRef posVal2 = NULL;
@@ -235,7 +246,7 @@ static void pushWindow(AXUIElementRef win) {
                     }
                     CFRelease(posVal2);
                 }
-            } else return;
+            } else { CFRelease(win); return; }
 
             CGSize s2 = CGSizeZero;
             CFTypeRef sizeVal2 = NULL;
@@ -246,14 +257,15 @@ static void pushWindow(AXUIElementRef win) {
                     }
                     CFRelease(sizeVal2);
                 }
-            } else return;
+            } else { CFRelease(win); return; }
 
             CGFloat cx2 = p2.x + s2.width / 2.0;
             CGFloat cy2 = p2.y + s2.height / 2.0;
             if (cx2 < barLeft || cx2 >= barLeft + barWidth || cy2 < barTop || cy2 >= barTop + barMonHeight) {
+                CFRelease(win);
                 return;
             }
-            if (p2.y >= barBottom) return;
+            if (p2.y >= barBottom) { CFRelease(win); return; }
 
             CGFloat delta2 = barBottom - p2.y;
             CGPoint newPos2 = CGPointMake(p2.x, barBottom);
@@ -271,6 +283,8 @@ static void pushWindow(AXUIElementRef win) {
                 AXUIElementSetAttributeValue(win, kAXSizeAttribute, newSizeVal2);
                 CFRelease(newSizeVal2);
             }
+
+            CFRelease(win);
         });
     }
 }
@@ -559,10 +573,16 @@ import (
 // PushdownEnable starts window observation and window adjustment for the given monitor.
 // If accessibility permission is not granted, it triggers the OS prompt and starts a background
 // polling timer to check for permission changes.
+//
+// The `top` we hand the C side is mon.Top + WorkTopOffset — i.e., the bar's
+// *resting* top edge below the menu bar. The pushdown uses that to compute
+// barBottom; if we passed raw mon.Top (= 0 on macOS) it would only push
+// windows past Y=BarHeight, leaving them overlapping the slice of the bar
+// that lives below the menu bar.
 func PushdownEnable(mon MonitorInfo, barHeight int) error {
 	res := C.platformPushdownEnable(
 		C.int(mon.Left),
-		C.int(mon.Top),
+		C.int(int(mon.Top)+mon.WorkTopOffset),
 		C.int(mon.Width),
 		C.int(mon.Height),
 		C.int(barHeight),
@@ -582,7 +602,7 @@ func PushdownDisable() {
 func PushdownReconfigure(mon MonitorInfo, barHeight int) {
 	C.platformPushdownReconfigure(
 		C.int(mon.Left),
-		C.int(mon.Top),
+		C.int(int(mon.Top)+mon.WorkTopOffset),
 		C.int(mon.Width),
 		C.int(mon.Height),
 		C.int(barHeight),
