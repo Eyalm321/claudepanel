@@ -37,6 +37,8 @@ type App struct {
 	barExpanded bool      // true = window on screen at mon.Top; false = above the top edge / hidden
 	leftBarAt   time.Time // first tick the cursor was off the bar — zero while it's on
 	animGen     uint64    // bumped on each new slide; in-flight animations exit if superseded
+
+	domReadyOnce bool // guards against WindowRuntimeReady firing twice on Windows WebView2
 }
 
 // Slide-animation duration. Keep in sync with collapseDelay's UX feel.
@@ -70,6 +72,15 @@ func (a *App) startup(app *application.App, window *application.WebviewWindow) {
 }
 
 func (a *App) domReady(app *application.App, window *application.WebviewWindow) {
+	// WindowRuntimeReady can fire more than once on Windows WebView2 (initial
+	// about:blank + the real asset load, or any in-app navigation). Without this
+	// guard each fire would build a second tray icon and spawn a second
+	// hover-watcher goroutine.
+	if a.domReadyOnce {
+		return
+	}
+	a.domReadyOnce = true
+
 	time.Sleep(300 * time.Millisecond)
 
 	hwnd := uintptr(window.NativeWindow())
