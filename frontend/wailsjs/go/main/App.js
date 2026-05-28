@@ -14,8 +14,16 @@ export function GetMonitors() {
   return window['go']['main']['App']['GetMonitors']();
 }
 
+export function GetRadioStreamURL() {
+  return window['go']['main']['App']['GetRadioStreamURL']();
+}
+
 export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
+}
+
+export function RefreshRadioStreamURL() {
+  return window['go']['main']['App']['RefreshRadioStreamURL']();
 }
 
 export function SaveConfig(arg1) {

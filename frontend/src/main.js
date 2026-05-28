@@ -2,7 +2,8 @@ import './style.css';
 import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
-  SaveConfig, SetPinned, SetEditorOpen
+  SaveConfig, SetPinned, SetEditorOpen,
+  GetRadioStreamURL, RefreshRadioStreamURL
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -285,11 +286,27 @@ async function togglePin() {
 
 document.getElementById('seg-pin').addEventListener('click', togglePin);
 
-// ── Radio Player (Claude FM background audio streaming) ──────────────────────
-let ytPlayer = null;
-let isYtApiLoaded = false;
+// ── Radio Player (Claude FM background audio streaming) ─────────────────────
+// Two playback paths, chosen at runtime based on whether the host WebView can
+// play HLS natively:
+//
+//   Native-HLS path  (macOS WKWebView): resolve the livestream's HLS manifest
+//     URL server-side via GetRadioStreamURL() and feed it to a top-level
+//     <audio> element. This sidesteps the YouTube IFrame's cross-origin
+//     gating, which silently swallows unMute() in WKWebView even with the
+//     mediaTypesRequiringUserActionForPlayback grant.
+//
+//   IFrame path  (Windows WebView2 / Linux WebKit2GTK): WebView2 (Chromium)
+//     has no native HLS, so we keep the YouTube IFrame embed there — it
+//     works on those platforms without the muted-autoplay gate that bites
+//     macOS.
+//
+// The branch is picked once at module load via <audio>.canPlayType().
 let isRadioPlaying = false;
 let currentVolume = parseInt(localStorage.getItem('claudepanel-fm-volume') || '100', 10);
+
+const audioEl = document.getElementById('audio-radio');
+const supportsNativeHls = audioEl && audioEl.canPlayType('application/vnd.apple.mpegurl') !== '';
 
 function updateVolumeUI() {
   const volEl = document.getElementById('radio-vol');
@@ -298,13 +315,23 @@ function updateVolumeUI() {
   }
 }
 
+function applyVolumeToPlayer() {
+  if (supportsNativeHls) {
+    if (audioEl) {
+      // <audio>.volume is 0..1; we clamp at 1 (boost above 100% would need
+      // a Web Audio GainNode and isn't implemented on this path).
+      audioEl.volume = Math.min(1, currentVolume / 100);
+    }
+  } else if (ytPlayer && typeof ytPlayer.setVolume === 'function') {
+    ytPlayer.setVolume(Math.round(currentVolume / 2));
+  }
+}
+
 function setVolume(vol) {
   currentVolume = Math.min(200, Math.max(0, vol));
   localStorage.setItem('claudepanel-fm-volume', currentVolume);
   updateVolumeUI();
-  if (ytPlayer && typeof ytPlayer.setVolume === 'function') {
-    ytPlayer.setVolume(Math.round(currentVolume / 2));
-  }
+  applyVolumeToPlayer();
 }
 
 function cycleVolume() {
@@ -319,6 +346,94 @@ function cycleVolume() {
   setVolume(nextVol);
 }
 
+function setRadioStatus(state) {
+  const statusEl = document.getElementById('radio-status');
+  const titleEl  = document.getElementById('radio-title');
+  if (!statusEl) return;
+  switch (state) {
+    case 'load':
+      statusEl.textContent = '[LOAD]';
+      statusEl.className = 'val loading';
+      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      break;
+    case 'on':
+      isRadioPlaying = true;
+      statusEl.textContent = '[ON]';
+      statusEl.className = 'val playing';
+      if (titleEl) {
+        titleEl.textContent = 'NOW PLAYING CLAUDE FM · NOW PLAYING CLAUDE FM · ';
+        titleEl.classList.add('marquee');
+      }
+      break;
+    case 'off':
+      isRadioPlaying = false;
+      statusEl.textContent = '[OFF]';
+      statusEl.className = 'val';
+      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      break;
+    case 'err':
+      isRadioPlaying = false;
+      statusEl.textContent = '[ERR]';
+      statusEl.className = 'val';
+      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      break;
+  }
+}
+
+// ── Native-HLS path (macOS WKWebView) ────────────────────────────────────────
+let audioWired = false;
+
+function wireAudioEvents() {
+  if (audioWired || !audioEl) return;
+  audioWired = true;
+  audioEl.addEventListener('playing', () => setRadioStatus('on'));
+  audioEl.addEventListener('pause',   () => setRadioStatus('off'));
+  audioEl.addEventListener('ended',   () => setRadioStatus('off'));
+  audioEl.addEventListener('error',   async (e) => {
+    console.error('audio error', audioEl.error, e);
+    // Signed URL may have expired or rotated — re-resolve once and retry.
+    try {
+      const fresh = await RefreshRadioStreamURL();
+      if (fresh) {
+        audioEl.src = fresh;
+        await audioEl.play();
+        return;
+      }
+    } catch (refreshErr) {
+      console.error('refresh stream url failed', refreshErr);
+    }
+    setRadioStatus('err');
+  });
+}
+
+async function toggleRadioAudio() {
+  wireAudioEvents();
+  try {
+    if (isRadioPlaying) {
+      audioEl.pause();
+      return;
+    }
+    if (!audioEl.src) {
+      setRadioStatus('load');
+      const url = await GetRadioStreamURL();
+      if (!url) {
+        setRadioStatus('err');
+        return;
+      }
+      audioEl.src = url;
+    }
+    applyVolumeToPlayer();
+    await audioEl.play();
+  } catch (err) {
+    console.error('Radio (audio) error:', err);
+    setRadioStatus('err');
+  }
+}
+
+// ── IFrame path (Windows WebView2 / Linux WebKit2GTK) ────────────────────────
+let ytPlayer = null;
+let isYtApiLoaded = false;
+
 function loadYtIframeApi() {
   return new Promise((resolve) => {
     if (isYtApiLoaded) {
@@ -329,7 +444,7 @@ function loadYtIframeApi() {
     tag.src = "https://www.youtube.com/iframe_api";
     const firstScriptTag = document.getElementsByTagName('script')[0];
     firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    
+
     window.onYouTubeIframeAPIReady = () => {
       isYtApiLoaded = true;
       resolve();
@@ -337,23 +452,15 @@ function loadYtIframeApi() {
   });
 }
 
-async function toggleRadio() {
-  const statusEl = document.getElementById('radio-status');
-  const titleEl = document.getElementById('radio-title');
+async function toggleRadioIframe() {
   try {
     if (!ytPlayer) {
-      statusEl.textContent = '[LOAD]';
-      statusEl.className = 'val loading';
-      if (titleEl) {
-        titleEl.textContent = 'CLAUDE FM';
-        titleEl.classList.remove('marquee');
-      }
+      setRadioStatus('load');
       await loadYtIframeApi();
       ytPlayer = new YT.Player('yt-player', {
         // YouTube refuses to play in 0x0 iframes (visibility / anti-fraud
-        // heuristic — their docs require >=200x200). The host container
-        // is positioned off-screen and overflow-clipped so the user never
-        // sees it. See index.html for the container styles.
+        // heuristic — their docs require >=200x200). Container is off-screen
+        // and overflow-clipped in index.html.
         height: '200',
         width: '200',
         videoId: 'YmQ7jRgf4f0',
@@ -363,12 +470,6 @@ async function toggleRadio() {
           'disablekb': 1,
           'fs': 0,
           'rel': 0,
-          // Start with autoplay + muted so the YouTube IFrame's own gesture
-          // policy is satisfied even when our click gesture has expired by
-          // the time the iframe loads (most relevant on macOS WKWebView,
-          // even with mediaTypesRequiringUserActionForPlayback disabled at
-          // the webview level — YouTube enforces its own check inside the
-          // cross-origin frame). We unmute immediately in onReady.
           'autoplay': 1,
           'mute': 1
         },
@@ -377,32 +478,10 @@ async function toggleRadio() {
             ytPlayer.setVolume(Math.round(currentVolume / 2));
             event.target.unMute();
             event.target.playVideo();
-            isRadioPlaying = true;
-            statusEl.textContent = '[ON]';
-            statusEl.className = 'val playing';
-            if (titleEl) {
-              titleEl.textContent = 'NOW PLAYING CLAUDE FM · NOW PLAYING CLAUDE FM · ';
-              titleEl.classList.add('marquee');
-            }
+            setRadioStatus('on');
           },
           'onStateChange': (event) => {
-            if (event.data === 1) { // YT.PlayerState.PLAYING
-              isRadioPlaying = true;
-              statusEl.textContent = '[ON]';
-              statusEl.className = 'val playing';
-              if (titleEl) {
-                titleEl.textContent = 'NOW PLAYING CLAUDE FM · NOW PLAYING CLAUDE FM · ';
-                titleEl.classList.add('marquee');
-              }
-            } else {
-              isRadioPlaying = false;
-              statusEl.textContent = '[OFF]';
-              statusEl.className = 'val';
-              if (titleEl) {
-                titleEl.textContent = 'CLAUDE FM';
-                titleEl.classList.remove('marquee');
-              }
-            }
+            setRadioStatus(event.data === 1 ? 'on' : 'off');
           }
         }
       });
@@ -415,15 +494,12 @@ async function toggleRadio() {
       ytPlayer.playVideo();
     }
   } catch (err) {
-    console.error('Radio error:', err);
-    statusEl.textContent = '[ERR]';
-    statusEl.className = 'val';
-    if (titleEl) {
-      titleEl.textContent = 'CLAUDE FM';
-      titleEl.classList.remove('marquee');
-    }
+    console.error('Radio (iframe) error:', err);
+    setRadioStatus('err');
   }
 }
+
+const toggleRadio = supportsNativeHls ? toggleRadioAudio : toggleRadioIframe;
 
 // Set up listeners
 const radioSeg = document.getElementById('seg-radio');

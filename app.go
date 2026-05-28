@@ -11,6 +11,7 @@ import (
 	"claudepanel/internal/claude"
 	"claudepanel/internal/config"
 	"claudepanel/internal/platform"
+	"claudepanel/internal/radio"
 	"claudepanel/internal/tray"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -29,6 +30,7 @@ type App struct {
 	monitors []platform.MonitorInfo
 	hwnd     uintptr
 	trayMgr  *tray.Manager
+	radio    *radio.Resolver
 
 	// hover-watcher state
 	editorOpen  bool
@@ -59,7 +61,7 @@ func NewApp() *App {
 	// to start with the bar docked, even if they collapsed it last time.
 	cfg.Pinned = true
 	cfg.AppBarMode = true
-	return &App{cfg: cfg}
+	return &App{cfg: cfg, radio: radio.New()}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -426,6 +428,20 @@ func (a *App) SetOpacity(opacity float64) error {
 
 func (a *App) GetVersion() string {
 	return Version
+}
+
+// GetRadioStreamURL resolves the Claude FM livestream to an HLS manifest URL
+// suitable for a top-level <audio> element. Used by macOS/Safari WebViews
+// that support HLS natively; Windows WebView2 still uses the YT IFrame path.
+func (a *App) GetRadioStreamURL() (string, error) {
+	return a.radio.StreamURL(a.ctx, false)
+}
+
+// RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL.
+// Frontend should call this when audio.onerror fires (signed URL may have
+// expired or rotated).
+func (a *App) RefreshRadioStreamURL() (string, error) {
+	return a.radio.StreamURL(a.ctx, true)
 }
 
 func (a *App) SetPinned(pinned bool) error {
