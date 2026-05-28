@@ -45,7 +45,13 @@ jobs:
           node-version: '18'
 
       - name: Install Wails CLI
-        run: go install github.com/Eyalm321/wails/v3/cmd/wails3@v3.0.0-alpha.96-mediaplayback.1
+        shell: bash
+        run: |
+          git clone https://github.com/Eyalm321/wails.git --branch v3.0.0-alpha.96-mediaplayback.1 --depth 1 wails-fork
+          cd wails-fork/v3/cmd/wails3
+          go install
+          cd ../../../
+          rm -rf wails-fork
 
       - name: Resolve version
         id: version
