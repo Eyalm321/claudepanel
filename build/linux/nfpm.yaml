@@ -27,6 +27,9 @@ depends:
   - x11-utils    # provides xprop
   - xdotool
   - python3
+  - gstreamer1.0-plugins-base
+  - gstreamer1.0-plugins-good
+  - gstreamer1.0-plugins-bad
 
 recommends:
   - nodejs       # required for the statusline command to run

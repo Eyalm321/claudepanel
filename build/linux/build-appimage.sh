@@ -26,6 +26,13 @@ cp "$ROOT/build/linux/icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/cl
 cp "$ROOT/build/linux/icon.png" "$APPDIR/claudepanel.png"
 ln -sf claudepanel.png "$APPDIR/.DirIcon"
 
+# Bundle GStreamer plugins
+mkdir -p "$APPDIR/usr/lib/gstreamer-1.0"
+if [ -d "/usr/lib/x86_64-linux-gnu/gstreamer-1.0" ]; then
+  echo "Bundling GStreamer plugins..."
+  cp /usr/lib/x86_64-linux-gnu/gstreamer-1.0/*.so "$APPDIR/usr/lib/gstreamer-1.0/"
+fi
+
 cp "$ROOT/build/linux/AppRun" "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 

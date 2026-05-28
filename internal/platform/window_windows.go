@@ -52,6 +52,7 @@ const (
 	wsMaximizebox     = uintptr(0x00010000)
 	wsSysmenu         = uintptr(0x00080000)
 	wsExToolwindow    = uintptr(0x00000080)
+	wsExAppwindow     = uintptr(0x00040000)
 	wsExLayered       = uintptr(0x00080000)
 	wsExTransparent   = uintptr(0x00000020)
 	hwndTopmost       = ^uintptr(0) // (HWND)(-1)
@@ -112,6 +113,7 @@ func ApplyBarStyles(hwnd uintptr) {
 
 	exStyle, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlExStyle)
 	exStyle |= wsExToolwindow | wsExLayered
+	exStyle &^= wsExAppwindow
 	procSetWindowLongPtrW.Call(hwnd, gwlExStyle, exStyle)
 
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0,

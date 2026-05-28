@@ -1,0 +1,214 @@
+//go:build linux && cgo
+package audio
+
+/*
+#cgo pkg-config: gstreamer-1.0
+#include <gst/gst.h>
+#include <stdlib.h>
+
+static GstMessageType get_message_type(GstMessage* msg) {
+	return GST_MESSAGE_TYPE(msg);
+}
+
+static GstObject* get_message_src(GstMessage* msg) {
+	return GST_MESSAGE_SRC(msg);
+}
+
+static void set_playbin_uri(GstElement* playbin, const char* uri) {
+	g_object_set(playbin, "uri", uri, NULL);
+}
+
+static void set_playbin_volume(GstElement* playbin, double volume) {
+	g_object_set(playbin, "volume", volume, NULL);
+}
+*/
+import "C"
+import (
+	"fmt"
+	"log"
+	"sync"
+	"unsafe"
+)
+
+var gstInitOnce sync.Once
+
+func initGStreamer() {
+	gstInitOnce.Do(func() {
+		// Initialize GStreamer with no arguments
+		C.gst_init(nil, nil)
+	})
+}
+
+type LinuxPlayer struct {
+	mu       sync.Mutex
+	emit     func(Event)
+	playbin  *C.GstElement
+	stopChan chan struct{}
+	wg       sync.WaitGroup
+	playing  bool
+}
+
+func New(emit func(Event)) (Player, error) {
+	initGStreamer()
+
+	cPlaybin := C.CString("playbin3")
+	cPlaybinName := C.CString("radio-playbin")
+	defer C.free(unsafe.Pointer(cPlaybin))
+	defer C.free(unsafe.Pointer(cPlaybinName))
+
+	playbin := C.gst_element_factory_make(cPlaybin, cPlaybinName)
+	if playbin == nil {
+		return nil, fmt.Errorf("failed to create GStreamer playbin3 element (is gstreamer1.0-plugins-base installed?)")
+	}
+
+	p := &LinuxPlayer{
+		emit:     emit,
+		playbin:  playbin,
+		stopChan: make(chan struct{}),
+	}
+
+	p.wg.Add(1)
+	go p.monitorBus()
+
+	return p, nil
+}
+
+func (p *LinuxPlayer) Play(url string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Stop previous playback if active
+	C.gst_element_set_state(p.playbin, C.GST_STATE_READY)
+
+	cURL := C.CString(url)
+	defer C.free(unsafe.Pointer(cURL))
+
+	C.set_playbin_uri(p.playbin, cURL)
+
+	ret := C.gst_element_set_state(p.playbin, C.GST_STATE_PLAYING)
+	if ret == C.GST_STATE_CHANGE_FAILURE {
+		return fmt.Errorf("failed to set GStreamer state to PLAYING")
+	}
+
+	p.playing = true
+	p.emit(Event{State: StateLoading})
+	return nil
+}
+
+func (p *LinuxPlayer) Pause() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.playing {
+		return nil
+	}
+
+	ret := C.gst_element_set_state(p.playbin, C.GST_STATE_PAUSED)
+	if ret == C.GST_STATE_CHANGE_FAILURE {
+		return fmt.Errorf("failed to set GStreamer state to PAUSED")
+	}
+
+	p.playing = false
+	p.emit(Event{State: StatePaused})
+	return nil
+}
+
+func (p *LinuxPlayer) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	C.gst_element_set_state(p.playbin, C.GST_STATE_READY)
+	p.playing = false
+	p.emit(Event{State: StateIdle})
+	return nil
+}
+
+func (p *LinuxPlayer) SetVolume(v float64) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Volume in playbin is 0.0 to 1.0 (clamped)
+	C.set_playbin_volume(p.playbin, C.double(v))
+	return nil
+}
+
+func (p *LinuxPlayer) monitorBus() {
+	defer p.wg.Done()
+
+	bus := C.gst_element_get_bus(p.playbin)
+	if bus == nil {
+		log.Println("[audio] Failed to get GStreamer bus")
+		return
+	}
+	defer C.gst_object_unref(C.gpointer(bus))
+
+	for {
+		select {
+		case <-p.stopChan:
+			return
+		default:
+			// Poll the bus with a 100ms timeout
+			msg := C.gst_bus_timed_pop_filtered(
+				bus,
+				100*C.GST_MSECOND,
+				C.GST_MESSAGE_ERROR|C.GST_MESSAGE_EOS|C.GST_MESSAGE_STATE_CHANGED,
+			)
+			if msg == nil {
+				continue
+			}
+
+			msgType := C.get_message_type(msg)
+			switch msgType {
+			case C.GST_MESSAGE_ERROR:
+				var err *C.GError
+				var debugInfo *C.gchar
+				C.gst_message_parse_error(msg, &err, &debugInfo)
+				errStr := C.GoString(err.message)
+				C.g_error_free(err)
+				C.g_free(C.gpointer(debugInfo))
+
+				p.emit(Event{
+					State: StateError,
+					Err:   errStr,
+				})
+
+			case C.GST_MESSAGE_EOS:
+				p.emit(Event{State: StateIdle})
+
+			case C.GST_MESSAGE_STATE_CHANGED:
+				var oldState, newState, pendingState C.GstState
+				C.gst_message_parse_state_changed(msg, &oldState, &newState, &pendingState)
+
+				// Only process state changes of the playbin itself
+				if C.get_message_src(msg) == (*C.GstObject)(unsafe.Pointer(p.playbin)) {
+					switch newState {
+					case C.GST_STATE_PLAYING:
+						p.emit(Event{State: StatePlaying})
+					case C.GST_STATE_PAUSED:
+						p.emit(Event{State: StatePaused})
+					case C.GST_STATE_READY, C.GST_STATE_NULL:
+						p.emit(Event{State: StateIdle})
+					}
+				}
+			}
+
+			C.gst_message_unref(msg)
+		}
+	}
+}
+
+func (p *LinuxPlayer) Close() error {
+	close(p.stopChan)
+	p.wg.Wait()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.playbin != nil {
+		C.gst_element_set_state(p.playbin, C.GST_STATE_NULL)
+		C.gst_object_unref(C.gpointer(p.playbin))
+		p.playbin = nil
+	}
+
+	return nil
+}

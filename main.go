@@ -4,7 +4,6 @@ import (
 	"embed"
 	"log"
 
-	"github.com/leaanthony/u"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -43,11 +42,6 @@ func main() {
 		DisableResize:    true,
 		Hidden:           true,
 		BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
-		Mac: application.MacWindow{
-			WebviewPreferences: application.MacWebviewPreferences{
-				EnableAutoplayWithoutUserAction: u.True,
-			},
-		},
 	})
 
 	// DOM Ready hook

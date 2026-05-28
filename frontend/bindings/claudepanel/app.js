@@ -61,17 +61,6 @@ export function GetPushdownStats() {
 }
 
 /**
- * GetRadioStreamURL resolves the given YouTube livestream video ID to an HLS
- * manifest URL suitable for a top-level <audio> element. The frontend owns
- * the station list and passes the active video ID per call.
- * @param {string} videoID
- * @returns {$CancellablePromise<string>}
- */
-export function GetRadioStreamURL(videoID) {
-    return $Call.ByID(1255851915, videoID);
-}
-
-/**
  * @returns {$CancellablePromise<string>}
  */
 export function GetVersion() {
@@ -86,14 +75,26 @@ export function Quit() {
 }
 
 /**
- * RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL for
- * the given video ID. Frontend should call this when hls.js or the <audio>
- * element fires a fatal error (signed URL may have expired or rotated).
- * @param {string} videoID
- * @returns {$CancellablePromise<string>}
+ * @returns {$CancellablePromise<void>}
  */
-export function RefreshRadioStreamURL(videoID) {
-    return $Call.ByID(3695927536, videoID);
+export function RadioPause() {
+    return $Call.ByID(1036964326);
+}
+
+/**
+ * @param {string} videoID
+ * @returns {$CancellablePromise<void>}
+ */
+export function RadioPlay(videoID) {
+    return $Call.ByID(469411798, videoID);
+}
+
+/**
+ * @param {number} v
+ * @returns {$CancellablePromise<void>}
+ */
+export function RadioSetVolume(v) {
+    return $Call.ByID(3673750934, v);
 }
 
 /**

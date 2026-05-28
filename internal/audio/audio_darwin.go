@@ -1,0 +1,101 @@
+//go:build darwin && cgo
+package audio
+
+/*
+#cgo CFLAGS: -x objective-c
+#cgo LDFLAGS: -framework Foundation -framework AVFoundation
+#import <stdlib.h>
+
+void* createDarwinPlayer(void* goPlayer);
+void playDarwinPlayer(void* playerPtr, const char* url);
+void pauseDarwinPlayer(void* playerPtr);
+void stopDarwinPlayer(void* playerPtr);
+void setVolumeDarwinPlayer(void* playerPtr, float vol);
+void freeDarwinPlayer(void* playerPtr);
+*/
+import "C"
+import (
+	"runtime/cgo"
+	"sync"
+	"unsafe"
+)
+
+type DarwinPlayer struct {
+	mu        sync.Mutex
+	emit      func(Event)
+	ptr       unsafe.Pointer
+	cgoHandle cgo.Handle
+}
+
+func New(emit func(Event)) (Player, error) {
+	p := &DarwinPlayer{
+		emit: emit,
+	}
+	p.cgoHandle = cgo.NewHandle(p)
+	p.ptr = C.createDarwinPlayer(unsafe.Pointer(&p.cgoHandle))
+	return p, nil
+}
+
+//export goDarwinPlayerCallback
+func goDarwinPlayerCallback(goPlayer unsafe.Pointer, stateStr *C.char, errStr *C.char) {
+	hPtr := (*cgo.Handle)(goPlayer)
+	player := hPtr.Value().(*DarwinPlayer)
+
+	state := State(C.GoString(stateStr))
+	var err string
+	if errStr != nil {
+		err = C.GoString(errStr)
+	}
+
+	player.emit(Event{
+		State: state,
+		Err:   err,
+	})
+}
+
+func (p *DarwinPlayer) Play(url string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cURL := C.CString(url)
+	defer C.free(unsafe.Pointer(cURL))
+
+	C.playDarwinPlayer(p.ptr, cURL)
+	return nil
+}
+
+func (p *DarwinPlayer) Pause() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	C.pauseDarwinPlayer(p.ptr)
+	return nil
+}
+
+func (p *DarwinPlayer) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	C.stopDarwinPlayer(p.ptr)
+	return nil
+}
+
+func (p *DarwinPlayer) SetVolume(v float64) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	C.setVolumeDarwinPlayer(p.ptr, C.float(v))
+	return nil
+}
+
+func (p *DarwinPlayer) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.ptr != nil {
+		C.freeDarwinPlayer(p.ptr)
+		p.ptr = nil
+	}
+	p.cgoHandle.Delete()
+	return nil
+}

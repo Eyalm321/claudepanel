@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"claudepanel/internal/audio"
 	"claudepanel/internal/claude"
 	"claudepanel/internal/config"
 	"claudepanel/internal/platform"
@@ -24,13 +25,14 @@ var Version = "dev"
 const collapseDelay = 200 * time.Millisecond
 
 type App struct {
-	app      *application.App
-	window   *application.WebviewWindow
-	cfg      *config.Config
-	monitors []platform.MonitorInfo
-	hwnd     uintptr
-	trayMgr  *tray.Manager
-	radio    *radio.Resolver
+	app       *application.App
+	window    *application.WebviewWindow
+	cfg       *config.Config
+	monitors  []platform.MonitorInfo
+	hwnd      uintptr
+	trayMgr   *tray.Manager
+	radio     *radio.Resolver
+	audioCtrl *audio.Controller
 
 	// hover-watcher state
 	editorOpen  bool
@@ -63,7 +65,21 @@ func NewApp() *App {
 	// to start with the bar docked, even if they collapsed it last time.
 	cfg.Pinned = true
 	cfg.AppBarMode = true
-	return &App{cfg: cfg, radio: radio.New()}
+	res := radio.New()
+	app := &App{cfg: cfg, radio: res}
+
+	ctrl, err := audio.NewController(res, func(ev audio.Event) {
+		if app.app != nil {
+			app.app.Event.Emit("radio:state", ev)
+		}
+	})
+	if err != nil {
+		log.Printf("[audio] Failed to initialize native audio controller: %v", err)
+	} else {
+		app.audioCtrl = ctrl
+	}
+
+	return app
 }
 
 func (a *App) startup(app *application.App, window *application.WebviewWindow) {
@@ -490,18 +506,25 @@ func (a *App) GetVersion() string {
 	return Version
 }
 
-// GetRadioStreamURL resolves the given YouTube livestream video ID to an HLS
-// manifest URL suitable for a top-level <audio> element. The frontend owns
-// the station list and passes the active video ID per call.
-func (a *App) GetRadioStreamURL(videoID string) (string, error) {
-	return a.radio.StreamURL(a.app.Context(), videoID, false)
+func (a *App) RadioPlay(videoID string) error {
+	if a.audioCtrl == nil {
+		return fmt.Errorf("audio controller not initialized")
+	}
+	return a.audioCtrl.PlayVideo(a.app.Context(), videoID)
 }
 
-// RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL for
-// the given video ID. Frontend should call this when hls.js or the <audio>
-// element fires a fatal error (signed URL may have expired or rotated).
-func (a *App) RefreshRadioStreamURL(videoID string) (string, error) {
-	return a.radio.StreamURL(a.app.Context(), videoID, true)
+func (a *App) RadioPause() error {
+	if a.audioCtrl == nil {
+		return fmt.Errorf("audio controller not initialized")
+	}
+	return a.audioCtrl.Pause()
+}
+
+func (a *App) RadioSetVolume(v float64) error {
+	if a.audioCtrl == nil {
+		return fmt.Errorf("audio controller not initialized")
+	}
+	return a.audioCtrl.SetVolume(v)
 }
 
 func (a *App) SetPinned(pinned bool) error {

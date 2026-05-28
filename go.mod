@@ -4,7 +4,6 @@ go 1.25.0
 
 require (
 	github.com/kkdai/youtube/v2 v2.10.5
-	github.com/leaanthony/u v1.1.1
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.96
 	golang.org/x/sys v0.44.0
 )
@@ -37,6 +36,7 @@ require (
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leaanthony/go-ansi-parser v1.6.1 // indirect
+	github.com/leaanthony/u v1.1.1 // indirect
 	github.com/lmittmann/tint v1.1.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -53,8 +53,3 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
-
-// Fork of Wails v3 with MacWebviewPreferences.EnableAutoplayWithoutUserAction
-// (upstream PR: https://github.com/wailsapp/wails/pull/5513).
-// Remove this directive once the PR is merged and a release is cut.
-replace github.com/wailsapp/wails/v3 => github.com/Eyalm321/wails/v3 v3.0.0-alpha.96-mediaplayback.1

@@ -48,16 +48,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgtk-4-dev libwebkit2gtk-4.1-dev libwebkitgtk-6.0-dev libayatana-appindicator3-dev pkg-config wget file
+          sudo apt-get install -y libgtk-3-dev libgtk-4-dev libwebkit2gtk-4.1-dev libwebkitgtk-6.0-dev libayatana-appindicator3-dev pkg-config wget file libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
 
       - name: Install Wails CLI
         shell: bash
         run: |
-          git clone https://github.com/Eyalm321/wails.git --branch v3.0.0-alpha.96-mediaplayback.1 --depth 1 wails-fork
-          cd wails-fork/v3/cmd/wails3
-          go install
-          cd ../../../
-          rm -rf wails-fork
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.96
 
       - name: Resolve version
         id: version

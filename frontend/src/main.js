@@ -3,7 +3,7 @@ import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
   SaveConfig, SetPinned, SetEditorOpen,
-  GetRadioStreamURL, RefreshRadioStreamURL
+  RadioPlay, RadioPause, RadioSetVolume
 } from '../bindings/claudepanel/app.js';
 import { Events } from '@wailsio/runtime';
 
@@ -183,6 +183,13 @@ async function init() {
 
     refreshId = setInterval(refresh, intervalMs);
 
+    // Initialize native player volume
+    try {
+      await RadioSetVolume(currentVolume / 100.0);
+    } catch (e) {
+      console.error('Failed to set initial radio volume:', e);
+    }
+
     Events.On('config:changed',  refresh);
     Events.On('account:changed', refresh);
     Events.On('monitor:changed', updateMonitorDisplay);
@@ -287,13 +294,9 @@ async function togglePin() {
 document.getElementById('seg-pin').addEventListener('click', togglePin);
 
 // ── Radio Player (background audio streaming) ────────────────────────────────
-// Single audio path for all platforms. The Go side resolves the livestream's
-// HLS manifest URL via GetRadioStreamURL(videoId) and we feed it to an <audio>
-// element. Safari/WKWebView plays HLS natively; for Chromium-based WebViews
-// (WebView2 on Windows, some WebKit2GTK builds on Linux) we lazy-load hls.js
-// only when needed, so macOS doesn't pay the bundle cost.
-// Station display names are constrained by .radio-title-wrap (~9 chars).
-// EWrX250Zhko is Lofi Girl's "lofi hip hop radio" 24/7 livestream.
+// The Go backend manages native playback and emits state events via 'radio:state'.
+// The frontend only maintains the station list and sends commands (play, pause, volume).
+
 const STATIONS = [
   { name: 'CLAUDE FM', id: 'YmQ7jRgf4f0' },
   { name: 'LOFI GIRL', id: 'EWrX250Zhko' },
@@ -304,11 +307,6 @@ if (activeStationIdx < 0 || activeStationIdx >= STATIONS.length) activeStationId
 let isRadioPlaying = false;
 let currentVolume = parseInt(localStorage.getItem('claudepanel-fm-volume') || '100', 10);
 
-const audioEl = document.getElementById('audio-radio');
-const supportsNativeHls = audioEl && audioEl.canPlayType('application/vnd.apple.mpegurl') !== '';
-
-let hls = null; // hls.js instance, created on first play when native HLS is unavailable.
-
 function activeStation() { return STATIONS[activeStationIdx]; }
 
 function updateVolumeUI() {
@@ -316,26 +314,23 @@ function updateVolumeUI() {
   if (volEl) volEl.textContent = currentVolume + '%';
 }
 
-function applyVolumeToPlayer() {
-  if (!audioEl) return;
-  // <audio>.volume is 0..1; clamp at 1. Boost above 100% would need a
-  // Web Audio GainNode and isn't implemented here.
-  audioEl.volume = Math.min(1, currentVolume / 100);
-}
-
-function setVolume(vol) {
+async function setVolume(vol) {
   currentVolume = Math.min(200, Math.max(0, vol));
   localStorage.setItem('claudepanel-fm-volume', currentVolume);
   updateVolumeUI();
-  applyVolumeToPlayer();
+  try {
+    await RadioSetVolume(currentVolume / 100.0);
+  } catch (e) {
+    console.error('RadioSetVolume failed:', e);
+  }
 }
 
-function cycleVolume() {
+async function cycleVolume() {
   let nextVol = currentVolume - 10;
   if (nextVol < 0) {
     nextVol = currentVolume === 0 ? 200 : 0;
   }
-  setVolume(nextVol);
+  await setVolume(nextVol);
 }
 
 function setRadioStatus(state) {
@@ -345,6 +340,7 @@ function setRadioStatus(state) {
   const stationName = activeStation().name;
   switch (state) {
     case 'load':
+      isRadioPlaying = false;
       statusEl.textContent = '[LOAD]';
       statusEl.className = 'val loading';
       if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
@@ -373,142 +369,82 @@ function setRadioStatus(state) {
   }
 }
 
-let audioWired = false;
-function wireAudioEvents() {
-  if (audioWired || !audioEl) return;
-  audioWired = true;
-  audioEl.addEventListener('playing', () => setRadioStatus('on'));
-  audioEl.addEventListener('pause',   () => setRadioStatus('off'));
-  audioEl.addEventListener('ended',   () => setRadioStatus('off'));
-  // Native-HLS path only — hls.js dispatches its own ERROR events and
-  // we handle URL refresh there to avoid double-firing this handler.
-  audioEl.addEventListener('error',   async () => {
-    if (hls) return; // hls.js owns recovery in that path.
-    console.error('audio error', audioEl.error);
-    try {
-      const fresh = await RefreshRadioStreamURL(activeStation().id);
-      if (fresh) {
-        audioEl.src = fresh;
-        await audioEl.play();
-        return;
-      }
-    } catch (refreshErr) {
-      console.error('refresh stream url failed', refreshErr);
-    }
-    setRadioStatus('err');
-  });
-}
-
-async function attachHlsJs(url) {
-  const { default: Hls } = await import('hls.js');
-  if (!Hls.isSupported()) {
-    throw new Error('hls.js: Media Source Extensions not supported in this WebView');
+// Receive and handle state from native player
+Events.On('radio:state', (event) => {
+  const data = event ? event.data : null;
+  if (!data) return;
+  if (data.videoID && data.videoID !== activeStation().id) {
+    return;
   }
-  if (hls) {
-    hls.destroy();
-    hls = null;
+  switch (data.state) {
+    case 'loading':
+      setRadioStatus('load');
+      break;
+    case 'playing':
+      setRadioStatus('on');
+      break;
+    case 'paused':
+      setRadioStatus('off');
+      break;
+    case 'idle':
+      setRadioStatus('off');
+      break;
+    case 'error':
+      console.error('Native player error:', data.error);
+      setRadioStatus('err');
+      break;
   }
-  hls = new Hls();
-  hls.attachMedia(audioEl);
-  hls.loadSource(url);
-  hls.on(Hls.Events.ERROR, async (_event, data) => {
-    console.error('hls.js error', data.type, data.details, data.fatal);
-    if (!data.fatal) return;
-    // Fatal — try to recover. For network errors, re-resolve and reload the
-    // source; for media errors, let hls.js try its own recovery once.
-    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-      try {
-        const fresh = await RefreshRadioStreamURL(activeStation().id);
-        if (fresh) {
-          hls.loadSource(fresh);
-          return;
-        }
-      } catch (refreshErr) {
-        console.error('refresh stream url failed', refreshErr);
-      }
-    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-      hls.recoverMediaError();
-      return;
-    }
-    setRadioStatus('err');
-  });
-}
+});
 
 async function toggleRadio() {
-  wireAudioEvents();
   try {
     if (isRadioPlaying) {
-      audioEl.pause();
-      return;
-    }
-    // First play (or play after a station switch reset us): resolve URL and
-    // attach via native HLS or hls.js.
-    if (!audioEl.src && !hls) {
+      await RadioPause();
+    } else {
       setRadioStatus('load');
-      const url = await GetRadioStreamURL(activeStation().id);
-      if (!url) {
-        setRadioStatus('err');
-        return;
-      }
-      if (supportsNativeHls) {
-        audioEl.src = url;
-      } else {
-        await attachHlsJs(url);
-      }
+      await RadioPlay(activeStation().id);
     }
-    applyVolumeToPlayer();
-    await audioEl.play();
   } catch (err) {
     console.error('Radio error:', err);
     setRadioStatus('err');
   }
 }
 
-// Tear down the current source/player so the next toggleRadio() resolves the
-// new station's URL from scratch. Used by station switching.
-function resetRadioSource() {
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-  if (audioEl) {
-    audioEl.pause();
-    audioEl.removeAttribute('src');
-    audioEl.load(); // flush internal buffer
-  }
-  isRadioPlaying = false;
-}
-
 async function cycleStation(dir) {
   const wasPlaying = isRadioPlaying;
   activeStationIdx = (activeStationIdx + dir + STATIONS.length) % STATIONS.length;
   localStorage.setItem('claudepanel-fm-station', String(activeStationIdx));
-  resetRadioSource();
-  setRadioStatus('off');
+  
   if (wasPlaying) {
-    await toggleRadio();
+    try {
+      await RadioPlay(activeStation().id);
+    } catch (e) {
+      console.error('Failed to switch station:', e);
+      setRadioStatus('err');
+    }
+  } else {
+    setRadioStatus('off');
   }
 }
 
 const radioSeg = document.getElementById('seg-radio');
-radioSeg.addEventListener('click', (e) => {
-  if (e.target.id === 'btn-radio-prev') { cycleStation(-1); return; }
-  if (e.target.id === 'btn-radio-next') { cycleStation(+1); return; }
+radioSeg.addEventListener('click', async (e) => {
+  if (e.target.id === 'btn-radio-prev') { await cycleStation(-1); return; }
+  if (e.target.id === 'btn-radio-next') { await cycleStation(+1); return; }
   if (e.target.id === 'radio-vol' || e.target.id === 'radio-vol-lbl') {
-    cycleVolume();
+    await cycleVolume();
     return;
   }
-  toggleRadio();
+  await toggleRadio();
 });
 
-radioSeg.addEventListener('wheel', (e) => {
+radioSeg.addEventListener('wheel', async (e) => {
   e.preventDefault();
   const diff = e.deltaY < 0 ? 5 : -5;
-  setVolume(currentVolume + diff);
+  await setVolume(currentVolume + diff);
 }, { passive: false });
 
 updateVolumeUI();
-// Render the persisted station name into the title (HTML default is CLAUDE FM).
 setRadioStatus('off');
 
 // ── Accounts Editor Controller ───────────────────────────────────────────────

@@ -137,12 +137,6 @@
 
   </div>
 
-  <!-- Radio playback: HLS manifest URL resolved by the Go side and played
-       via a top-level <audio>. Safari/WKWebView plays HLS natively; other
-       WebViews (WebView2, some WebKit2GTK builds) get hls.js lazy-loaded
-       on first play. See frontend/src/main.js. -->
-  <audio id="audio-radio" preload="none"></audio>
-
   <script src="./src/main.js" type="module"></script>
 </body>
 </html>
