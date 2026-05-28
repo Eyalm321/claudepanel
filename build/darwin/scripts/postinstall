@@ -6,6 +6,14 @@
 
 set -u
 
+# Strip the com.apple.quarantine xattr from the installed bundle. macOS TCC
+# (accessibility, automation, etc.) refuses to persist grants for quarantined
+# bundles on modern macOS — the toggle appears to take effect, then drops on
+# the next launch. Pkg installer doesn't apply quarantine, but if the pkg
+# itself was downloaded via a browser the attribute can propagate. Run
+# unconditionally; xattr exits 0 when the attribute isn't present.
+/usr/bin/xattr -dr com.apple.quarantine /Applications/ClaudePanel.app 2>/dev/null || true
+
 TARGET_USER="${USER:-$(stat -f '%Su' /dev/console 2>/dev/null || echo '')}"
 if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
     echo "ClaudePanel postinstall: could not determine GUI user; skipping statusline configuration."

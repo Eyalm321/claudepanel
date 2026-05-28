@@ -157,14 +157,28 @@ tasks:
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
-      # Deliberately NOT ad-hoc signing here. Ad-hoc codesign changes the
-      # signature on every build (different binary content -> different
-      # CDHash), and macOS TCC binds accessibility/automation grants to the
-      # signature for any signed app — so each release would force the user
-      # to re-grant. Unsigned bundles fall back to path-based TCC, which
-      # means the grant for /Applications/ClaudePanel.app survives across
-      # releases. Use the `sign` / `sign:notarize` tasks once SIGN_IDENTITY
-      # is set (Developer ID) — that gives a stable team-ID-based grant.
+      # Ad-hoc sign on macOS. macOS TCC won't persist accessibility grants
+      # for *unsigned* bundles across launches on modern macOS — within a
+      # single release session the toggle stays on, but quit + relaunch
+      # silently drops the grant. Ad-hoc gives TCC a stable CDHash for the
+      # life of one release (the hash is content-derived; same binary =>
+      # same hash), so the grant survives quit/relaunch of the same build.
+      # Across-release upgrades will still re-prompt because the binary
+      # content changes — proper fix is Developer ID via the `sign` task.
+      - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
+
+  codesign:adhoc:
+    summary: Ad-hoc signs the app bundle (macOS only)
+    internal: true
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+
+  codesign:skip:
+    summary: Skips codesigning when cross-compiling
+    internal: true
+    cmds:
+      - 'echo "Skipping codesign (not available on {{OS}}). Sign the .app on macOS before distribution."'
 
   run:
     cmds:
@@ -177,6 +191,7 @@ tasks:
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
       - '"{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
 
   sign:
