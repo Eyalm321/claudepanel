@@ -171,7 +171,24 @@ func (a *App) cursorOverBar() bool {
 }
 
 func (a *App) checkHover() {
-	if a.cfg.Pinned || a.hwnd == 0 || a.editorOpen {
+	if a.hwnd == 0 || a.editorOpen {
+		return
+	}
+	// Fullscreen takes precedence over pin/hover: while any frontmost-app
+	// main window is in native macOS fullscreen, force-collapse the bar (the
+	// tray icon stays). On Windows/Linux IsFullScreenActive is a stub and
+	// always returns false, so this is a no-op there.
+	if platform.IsFullScreenActive() {
+		if a.barExpanded {
+			a.setBarExpanded(false)
+		}
+		return
+	}
+	if a.cfg.Pinned {
+		// Re-expand on exit-fullscreen if we suppressed earlier.
+		if !a.barExpanded {
+			a.setBarExpanded(true)
+		}
 		return
 	}
 	if a.cursorOverBar() {

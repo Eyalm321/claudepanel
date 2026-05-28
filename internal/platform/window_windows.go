@@ -247,6 +247,12 @@ func ResetDwmFrame(hwnd uintptr) {
 // has the full set of primitives wired up at v1.
 func AutoHideSupported() bool { return true }
 
+// IsFullScreenActive: stub. The macOS hide-on-fullscreen feature has no
+// direct analogue on Windows — apps that go fullscreen typically display on
+// their own without needing the bar to step aside. If we add it later, this
+// becomes a GetForegroundWindow + WS_EX_TOPMOST + style check.
+func IsFullScreenActive() bool { return false }
+
 // GetCursorPos returns the current cursor position in virtual screen coords
 // (top-left of the primary monitor is 0,0). Used for hover detection because
 // WebView2's mouseleave is unreliable when the cursor exits a small window.
