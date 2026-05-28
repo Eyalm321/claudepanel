@@ -2,158 +2,120 @@ package tray
 
 import (
 	"fmt"
+	"runtime"
 
-	// Fork of getlantern/systray maintained to coexist with another GUI
-	// framework that already owns NSApp on macOS — getlantern/systray
-	// defines its own AppDelegate, which collides at link time with
-	// Wails' AppDelegate (the v1.0.x release blocker on darwin).
-	"fyne.io/systray"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Event types emitted by the tray to the app.
-type EventType int
-
-const (
-	EventSetAccount EventType = iota // Index int
-	EventSetMonitor                  // Index int
-	EventToggleStartup
-	EventManageAccounts
-	EventQuit
-)
-
-// Event carries a tray menu action back to the App.
-type Event struct {
-	Type  EventType
-	Index int // used by EventSetAccount and EventSetMonitor
+// Controller defines the interface for App callbacks from the tray.
+type Controller interface {
+	SetActiveAccount(index int) error
+	SetMonitor(index int) error
+	ToggleStartup()
+	ConfigureAccounts()
+	Quit()
 }
 
 // Manager owns the tray lifecycle.
 type Manager struct {
-	events chan Event
-
-	// updated at runtime
-	accountItems []*systray.MenuItem
-	monitorItems []*systray.MenuItem
-	startupItem  *systray.MenuItem
+	tray         *application.SystemTray
+	menu         *application.Menu
+	accountItems []*application.MenuItem
+	monitorItems []*application.MenuItem
+	startupItem  *application.MenuItem
 }
 
 func New() *Manager {
-	return &Manager{events: make(chan Event, 8)}
+	return &Manager{}
 }
 
-// Events returns the channel the app should read from.
-func (m *Manager) Events() <-chan Event { return m.events }
+// Build creates the native system tray and its menus.
+func (m *Manager) Build(
+	app *application.App,
+	controller Controller,
+	iconBytes []byte,
+	version string,
+	accountNames []string,
+	numMonitors int,
+	startWithWindows bool,
+	activeAccount int,
+	activeMonitor int,
+) {
+	m.tray = app.SystemTray.New()
 
-// Run starts the systray blocking loop. Call in a dedicated goroutine.
-func (m *Manager) Run(iconBytes []byte, version string, accountNames []string, numMonitors int) {
-	systray.Run(func() { m.onReady(iconBytes, version, accountNames, numMonitors) }, m.onExit)
+	if runtime.GOOS == "darwin" {
+		m.tray.SetTemplateIcon(iconBytes)
+	} else {
+		m.tray.SetIcon(iconBytes)
+	}
+
+	m.menu = app.NewMenu()
+	m.menu.Add(fmt.Sprintf("Claude Panel %s", version)).SetEnabled(false)
+	m.menu.AddSeparator()
+
+	// Accounts
+	for i, name := range accountNames {
+		idx := i
+		item := m.menu.AddRadio(fmt.Sprintf("Account: %s", name), i == activeAccount)
+		item.OnClick(func(ctx *application.Context) {
+			_ = controller.SetActiveAccount(idx)
+		})
+		m.accountItems = append(m.accountItems, item)
+	}
+	m.menu.AddSeparator()
+
+	// Monitors
+	for i := 0; i < numMonitors; i++ {
+		idx := i
+		item := m.menu.AddRadio(fmt.Sprintf("Monitor %d", i+1), i == activeMonitor)
+		item.OnClick(func(ctx *application.Context) {
+			_ = controller.SetMonitor(idx)
+		})
+		m.monitorItems = append(m.monitorItems, item)
+	}
+	m.menu.AddSeparator()
+
+	// Start-on-login toggle
+	m.startupItem = m.menu.AddCheckbox("Start on login", startWithWindows)
+	m.startupItem.OnClick(func(ctx *application.Context) {
+		controller.ToggleStartup()
+	})
+
+	// Configure Accounts item
+	m.menu.Add("Configure Accounts...").OnClick(func(ctx *application.Context) {
+		controller.ConfigureAccounts()
+	})
+
+	m.menu.AddSeparator()
+
+	// Quit
+	m.menu.Add("Quit").OnClick(func(ctx *application.Context) {
+		controller.Quit()
+	})
+
+	m.tray.SetMenu(m.menu)
 }
 
-// Quit tears down the tray icon.
-func (m *Manager) Quit() { systray.Quit() }
+// Quit is a no-op in Wails v3 as application teardown is managed by the Wails runtime.
+func (m *Manager) Quit() {}
 
 // SetAccountChecked updates the checkmark on the account submenu.
 func (m *Manager) SetAccountChecked(index int) {
 	for i, item := range m.accountItems {
-		if i == index {
-			item.Check()
-		} else {
-			item.Uncheck()
-		}
+		item.SetChecked(i == index)
 	}
 }
 
 // SetMonitorChecked updates the checkmark on the monitor submenu.
 func (m *Manager) SetMonitorChecked(index int) {
 	for i, item := range m.monitorItems {
-		if i == index {
-			item.Check()
-		} else {
-			item.Uncheck()
-		}
+		item.SetChecked(i == index)
 	}
 }
 
-// SetStartup updates the startup menu item label.
+// SetStartup updates the startup menu item checked state.
 func (m *Manager) SetStartup(enabled bool) {
-	if m.startupItem == nil {
-		return
-	}
-	if enabled {
-		m.startupItem.SetTitle("Start on login: ON")
-		m.startupItem.Check()
-	} else {
-		m.startupItem.SetTitle("Start on login: OFF")
-		m.startupItem.Uncheck()
+	if m.startupItem != nil {
+		m.startupItem.SetChecked(enabled)
 	}
 }
-
-func (m *Manager) onReady(iconBytes []byte, version string, accountNames []string, numMonitors int) {
-	systray.SetIcon(iconBytes)
-	systray.SetTooltip("Claude Panel")
-
-	// Title (disabled)
-	title := systray.AddMenuItem(fmt.Sprintf("Claude Panel %s", version), "")
-	title.Disable()
-	systray.AddSeparator()
-
-	// Account items
-	for i, name := range accountNames {
-		item := systray.AddMenuItem(fmt.Sprintf("Account: %s", name), "")
-		if i == 0 {
-			item.Check()
-		}
-		idx := i
-		m.accountItems = append(m.accountItems, item)
-		go func(mi *systray.MenuItem, index int) {
-			for range mi.ClickedCh {
-				m.events <- Event{Type: EventSetAccount, Index: index}
-			}
-		}(item, idx)
-	}
-	systray.AddSeparator()
-
-	// Monitor items
-	for i := 0; i < numMonitors; i++ {
-		label := fmt.Sprintf("Monitor %d", i+1)
-		item := systray.AddMenuItem(label, "")
-		if i == 0 {
-			item.Check()
-		}
-		idx := i
-		m.monitorItems = append(m.monitorItems, item)
-		go func(mi *systray.MenuItem, index int) {
-			for range mi.ClickedCh {
-				m.events <- Event{Type: EventSetMonitor, Index: index}
-			}
-		}(item, idx)
-	}
-	systray.AddSeparator()
-
-	// Start-on-login toggle
-	m.startupItem = systray.AddMenuItem("Start on login: OFF", "Launch on login")
-	go func() {
-		for range m.startupItem.ClickedCh {
-			m.events <- Event{Type: EventToggleStartup}
-		}
-	}()
-
-	// Configure Accounts item
-	manageAccts := systray.AddMenuItem("Configure Accounts...", "Add, edit, or delete Claude accounts")
-	go func() {
-		for range manageAccts.ClickedCh {
-			m.events <- Event{Type: EventManageAccounts}
-		}
-	}()
-
-	systray.AddSeparator()
-
-	// Quit
-	quit := systray.AddMenuItem("Quit", "Exit Claude Panel")
-	go func() {
-		<-quit.ClickedCh
-		m.events <- Event{Type: EventQuit}
-	}()
-}
-
-func (m *Manager) onExit() {}

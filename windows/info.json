@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "ClaudePanel",
+			"FileDescription": "Claude Code Usage Panel",
+			"LegalCopyright": "© now, My Company",
+			"ProductName": "Claude Panel",
+			"Comments": "This is a comment"
+		}
+	}
+}

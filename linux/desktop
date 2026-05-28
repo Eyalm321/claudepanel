@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Claude Panel
+Comment=Claude Code Usage Panel
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/ClaudePanel %u
+Terminal=false
+Type=Application
+Icon=ClaudePanel
+Categories=Utility;
+StartupWMClass=ClaudePanel
+
+ 

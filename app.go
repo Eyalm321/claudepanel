@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +13,7 @@ import (
 	"claudepanel/internal/radio"
 	"claudepanel/internal/tray"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // Version is set via -ldflags "-X main.Version=x.y.z" at build time.
@@ -25,7 +24,8 @@ var Version = "dev"
 const collapseDelay = 200 * time.Millisecond
 
 type App struct {
-	ctx      context.Context
+	app      *application.App
+	window   *application.WebviewWindow
 	cfg      *config.Config
 	monitors []platform.MonitorInfo
 	hwnd     uintptr
@@ -64,20 +64,17 @@ func NewApp() *App {
 	return &App{cfg: cfg, radio: radio.New()}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func (a *App) startup(app *application.App, window *application.WebviewWindow) {
+	a.app = app
+	a.window = window
 }
 
-func (a *App) domReady(ctx context.Context) {
+func (a *App) domReady(app *application.App, window *application.WebviewWindow) {
 	time.Sleep(300 * time.Millisecond)
 
-	hwnd, err := platform.FindWindowByPID()
-	if err != nil {
-		log.Printf("HWND lookup failed: %v", err)
-	} else {
-		a.hwnd = hwnd
-		platform.ApplyBarStyles(hwnd)
-	}
+	hwnd := uintptr(window.NativeWindow())
+	a.hwnd = hwnd
+	platform.ApplyBarStyles(hwnd)
 
 	a.monitors = platform.GetMonitors()
 	if a.cfg.Monitor >= len(a.monitors) {
@@ -116,7 +113,7 @@ func (a *App) domReady(ctx context.Context) {
 		}
 	}
 
-	go a.runTray()
+	a.runTray()
 	go a.runHoverWatcher()
 }
 
@@ -129,7 +126,7 @@ func (a *App) runHoverWatcher() {
 	defer ticker.Stop()
 	for {
 		select {
-		case <-a.ctx.Done():
+		case <-a.app.Context().Done():
 			return
 		case <-ticker.C:
 			a.checkHover()
@@ -280,7 +277,7 @@ func (a *App) applyClickThrough() {
 	platform.SetClickThrough(a.hwnd, a.cfg.ClickThrough || autoHide)
 }
 
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown() {
 	platform.PushdownDisable()
 	if a.hwnd != 0 {
 		platform.RemoveAppBar(a.hwnd)
@@ -296,30 +293,37 @@ func (a *App) runTray() {
 		names[i] = acc.Name
 	}
 	a.trayMgr = tray.New()
-	go a.handleTrayEvents()
-	a.trayMgr.Run(trayIconBytes, Version, names, len(a.monitors))
+	a.trayMgr.Build(
+		a.app,
+		a,
+		trayIconBytes,
+		Version,
+		names,
+		len(a.monitors),
+		a.cfg.StartWithWindows,
+		a.cfg.ActiveAccount,
+		a.cfg.Monitor,
+	)
 }
 
-func (a *App) handleTrayEvents() {
-	for event := range a.trayMgr.Events() {
-		switch event.Type {
-		case tray.EventSetAccount:
-			_ = a.SetActiveAccount(event.Index)
-		case tray.EventSetMonitor:
-			_ = a.SetMonitor(event.Index)
-		case tray.EventToggleStartup:
-			a.cfg.StartWithWindows = !a.cfg.StartWithWindows
-			exePath, _ := os.Executable()
-			_ = config.SetStartOnLogin(a.cfg.StartWithWindows, exePath)
-			_ = config.Save(a.cfg)
-			a.trayMgr.SetStartup(a.cfg.StartWithWindows)
-		case tray.EventManageAccounts:
-			runtime.EventsEmit(a.ctx, "show:accounts-editor")
-		case tray.EventQuit:
-			a.trayMgr.Quit()
-			runtime.Quit(a.ctx)
-		}
+// tray.Controller implementation callbacks
+
+func (a *App) ToggleStartup() {
+	a.cfg.StartWithWindows = !a.cfg.StartWithWindows
+	exePath, _ := os.Executable()
+	_ = config.SetStartOnLogin(a.cfg.StartWithWindows, exePath)
+	_ = config.Save(a.cfg)
+	if a.trayMgr != nil {
+		a.trayMgr.SetStartup(a.cfg.StartWithWindows)
 	}
+}
+
+func (a *App) ConfigureAccounts() {
+	a.app.Event.Emit("show:accounts-editor")
+}
+
+func (a *App) Quit() {
+	a.app.Quit()
 }
 
 // ── Wails-exported bindings ──────────────────────────────────────────────────
@@ -383,7 +387,7 @@ func (a *App) SaveConfig(cfg config.Config) error {
 			platform.PushdownDisable()
 		}
 	}
-	runtime.EventsEmit(a.ctx, "config:changed")
+	a.app.Event.Emit("config:changed")
 	return nil
 }
 
@@ -403,7 +407,7 @@ func (a *App) SetActiveAccount(index int) error {
 	if a.trayMgr != nil {
 		a.trayMgr.SetAccountChecked(index)
 	}
-	runtime.EventsEmit(a.ctx, "account:changed", index)
+	a.app.Event.Emit("account:changed", index)
 	return nil
 }
 
@@ -426,7 +430,7 @@ func (a *App) SetMonitor(index int) error {
 	if a.trayMgr != nil {
 		a.trayMgr.SetMonitorChecked(index)
 	}
-	runtime.EventsEmit(a.ctx, "monitor:changed", index)
+	a.app.Event.Emit("monitor:changed", index)
 	return nil
 }
 
@@ -453,14 +457,14 @@ func (a *App) GetVersion() string {
 // manifest URL suitable for a top-level <audio> element. The frontend owns
 // the station list and passes the active video ID per call.
 func (a *App) GetRadioStreamURL(videoID string) (string, error) {
-	return a.radio.StreamURL(a.ctx, videoID, false)
+	return a.radio.StreamURL(a.app.Context(), videoID, false)
 }
 
 // RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL for
 // the given video ID. Frontend should call this when hls.js or the <audio>
 // element fires a fatal error (signed URL may have expired or rotated).
 func (a *App) RefreshRadioStreamURL(videoID string) (string, error) {
-	return a.radio.StreamURL(a.ctx, videoID, true)
+	return a.radio.StreamURL(a.app.Context(), videoID, true)
 }
 
 func (a *App) SetPinned(pinned bool) error {
@@ -491,7 +495,7 @@ func (a *App) SetPinned(pinned bool) error {
 			a.setBarExpanded(a.cursorOverBar())
 		}
 	}
-	runtime.EventsEmit(a.ctx, "pinned:changed", pinned)
+	a.app.Event.Emit("pinned:changed", pinned)
 	return nil
 }
 
@@ -513,4 +517,3 @@ func (a *App) SetEditorOpen(open bool) {
 func (a *App) GetPushdownStats() platform.PushdownStats {
 	return platform.GetPushdownStats()
 }
-

@@ -45,7 +45,7 @@ jobs:
           node-version: '18'
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/Eyalm321/wails/v3/cmd/wails3@v3.0.0-alpha.96-mediaplayback.1
 
       - name: Resolve version
         id: version
@@ -71,30 +71,32 @@ jobs:
 
       - name: Build Windows installer
         if: matrix.os == 'windows-latest'
-        run: wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+        working-directory: ./windows
+        run: wails3 task package WAILS3=wails3
 
       - name: Stage Windows artifact
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          Write-Host "Contents of build\bin:"
-          Get-ChildItem build\bin
+          Write-Host "Contents of bin:"
+          Get-ChildItem bin
           New-Item -ItemType Directory -Force dist | Out-Null
           # Match whatever Wails NSIS produced (filename includes outputfilename + arch).
-          $installer = Get-ChildItem build\bin -Filter '*installer*.exe' | Select-Object -First 1
-          if (-not $installer) { throw "No installer .exe found in build\bin" }
+          $installer = Get-ChildItem bin -Filter '*installer*.exe' | Select-Object -First 1
+          if (-not $installer) { throw "No installer .exe found in bin" }
           Copy-Item $installer.FullName "dist\ClaudePanel-${{ steps.version.outputs.semver }}-windows-amd64-setup.exe"
 
       # ── macOS ──
       - name: Build macOS app bundle
         if: matrix.os == 'macos-latest'
-        run: wails build -platform darwin/universal -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+        working-directory: ./darwin
+        run: wails3 task package:universal WAILS3=wails3
 
       - name: Build macOS .pkg
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p pkgroot/Applications
-          cp -R build/bin/ClaudePanel.app pkgroot/Applications/
+          cp -R bin/ClaudePanel.app pkgroot/Applications/
           chmod +x build/darwin/scripts/postinstall build/darwin/scripts/preuninstall
           mkdir -p dist
           pkgbuild \
@@ -111,19 +113,19 @@ jobs:
         run: |
           sudo apt-get update
           # Ubuntu 24.04 (ubuntu-latest) dropped libwebkit2gtk-4.0-dev. Wails
-          # v2.10+ supports the 4.1 series via the `webkit2_41` build tag.
-          # libayatana-appindicator3-dev is needed by getlantern/systray.
+          # v3 supports the 4.1 series via the webwebkit2gtk-4.1-dev library.
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev pkg-config wget file
 
       - name: Build Linux binary
         if: matrix.os == 'ubuntu-latest'
-        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+        working-directory: ./linux
+        run: wails3 task build WAILS3=wails3 EXTRA_TAGS=webkit2_41
 
       - name: Normalise Linux binary name to lowercase
         if: matrix.os == 'ubuntu-latest'
         # Wails honours outputfilename ("ClaudePanel") on Linux too, but the
         # nfpm.yaml and AppImage script expect lowercase per Linux convention.
-        run: cp build/bin/ClaudePanel build/bin/claudepanel
+        run: cp bin/ClaudePanel bin/claudepanel
 
       - name: Install nfpm
         if: matrix.os == 'ubuntu-latest'

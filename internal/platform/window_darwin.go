@@ -7,17 +7,6 @@ package platform
 #cgo darwin LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 
-static NSWindow* findOurWindow(void) {
-    NSArray<NSWindow*>* windows = [NSApp windows];
-    for (NSWindow* w in windows) {
-        if ([w isVisible] && [w title] != nil) {
-            return w;
-        }
-    }
-    if ([windows count] > 0) return [windows objectAtIndex:0];
-    return nil;
-}
-
 // Every NSWindow / NSApp / NSScreen mutation must happen on the main thread.
 // Wails invokes OnDomReady / Wails-bound methods on a background goroutine, so
 // raw cgo calls into AppKit from there get killed by AppKit's main-thread
@@ -31,9 +20,9 @@ static inline void runOnMain(dispatch_block_t block) {
     }
 }
 
-void platformApplyBarStyles(void) {
+void platformApplyBarStyles(void* nsWindow) {
     runOnMain(^{
-        NSWindow* w = findOurWindow();
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) return;
         [w setStyleMask:NSWindowStyleMaskBorderless];
         [w setLevel:NSStatusWindowLevel];
@@ -43,9 +32,9 @@ void platformApplyBarStyles(void) {
     });
 }
 
-void platformSetOpacity(double opacity) {
+void platformSetOpacity(void* nsWindow, double opacity) {
     runOnMain(^{
-        NSWindow* w = findOurWindow();
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) return;
         double a = opacity;
         if (a < 0) a = 0;
@@ -54,17 +43,17 @@ void platformSetOpacity(double opacity) {
     });
 }
 
-void platformSetClickThrough(int enabled) {
+void platformSetClickThrough(void* nsWindow, int enabled) {
     runOnMain(^{
-        NSWindow* w = findOurWindow();
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) return;
         [w setIgnoresMouseEvents:(enabled ? YES : NO)];
     });
 }
 
-void platformDockToMonitor(int left, int top, int width, int height) {
+void platformDockToMonitor(void* nsWindow, int left, int top, int width, int height) {
     runOnMain(^{
-        NSWindow* w = findOurWindow();
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) return;
         // The system menu bar always renders above every window level, so we
         // position at the top of [NSScreen visibleFrame] (the area below the
@@ -78,9 +67,9 @@ void platformDockToMonitor(int left, int top, int width, int height) {
     });
 }
 
-void platformGetWindowSize(int* outLeft, int* outTop, int* outWidth, int* outHeight) {
+void platformGetWindowSize(void* nsWindow, int* outLeft, int* outTop, int* outWidth, int* outHeight) {
     runOnMain(^{
-        NSWindow* w = findOurWindow();
+        NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) { *outLeft = *outTop = *outWidth = *outHeight = 0; return; }
         NSRect f = [w frame];
         NSScreen* main = [NSScreen mainScreen];
@@ -95,31 +84,23 @@ void platformGetWindowSize(int* outLeft, int* outTop, int* outWidth, int* outHei
 import "C"
 
 import (
-	"fmt"
-	"os"
+	"unsafe"
 )
 
-// On macOS the "hwnd" is unused — we look up the window via NSApp.windows.
-// We still keep the uintptr return for API parity.
+// FindWindowByPID is kept for API parity but is a no-op on Wails v3 since the
+// native window handle is exposed directly by the window instance.
 func FindWindowByPID() (uintptr, error) {
-	if os.Getpid() == 0 {
-		return 0, fmt.Errorf("no process")
-	}
-	return 1, nil // sentinel: non-zero so existing callers proceed
+	return 1, nil
 }
 
 func ApplyBarStyles(hwnd uintptr) {
-	C.platformApplyBarStyles()
+	C.platformApplyBarStyles(unsafe.Pointer(hwnd))
 }
 
 func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
-	// macOS has no AppBar equivalent — Cocoa always renders the system menu
-	// bar above every window level. The Objective-C side positions us at
-	// [NSScreen visibleFrame] (the area below the menu bar) instead of
-	// fighting it. NSWindow geometry uses POINTS, so pass mon.Width (points),
-	// NOT PhysWidth (Retina pixels) — otherwise on a 2x display the window
-	// would be twice as wide as the screen.
-	C.platformDockToMonitor(C.int(mon.Left), C.int(mon.Top), C.int(mon.Width), C.int(barHeight))
+	// NSWindow geometry uses POINTS, so pass mon.Width (points), NOT PhysWidth
+	// (Retina pixels).
+	C.platformDockToMonitor(unsafe.Pointer(hwnd), C.int(mon.Left), C.int(mon.Top), C.int(mon.Width), C.int(barHeight))
 }
 
 func RemoveAppBar(hwnd uintptr) {
@@ -128,35 +109,33 @@ func RemoveAppBar(hwnd uintptr) {
 
 func GetWindowSize(hwnd uintptr) (left, top, width, height int) {
 	var l, t, w, h C.int
-	C.platformGetWindowSize(&l, &t, &w, &h)
+	C.platformGetWindowSize(unsafe.Pointer(hwnd), &l, &t, &w, &h)
 	return int(l), int(t), int(w), int(h)
 }
 
 func SetWindowHeight(hwnd uintptr, physHeight int) {
 	l, t, w, _ := GetWindowSize(hwnd)
-	C.platformDockToMonitor(C.int(l), C.int(t), C.int(w), C.int(physHeight))
+	C.platformDockToMonitor(unsafe.Pointer(hwnd), C.int(l), C.int(t), C.int(w), C.int(physHeight))
 }
 
 func SetOpacity(hwnd uintptr, opacity float64) {
-	C.platformSetOpacity(C.double(opacity))
+	C.platformSetOpacity(unsafe.Pointer(hwnd), C.double(opacity))
 }
 
-// AutoHideSupported is false on macOS — MoveWindow / SetWindowClipTop /
-// HideWindow stubs mean the slide animation can't run, and toggling
-// click-through without the animation just makes the bar unclickable.
+// AutoHideSupported is false on macOS.
 func AutoHideSupported() bool { return false }
 
-// GetCursorPos is a stub on macOS; the hover-watcher is Windows-only for v1.
+// GetCursorPos is a stub on macOS.
 func GetCursorPos() (int, int) { return -1, -1 }
 
 // ResetDwmFrame is a Windows-only concept; no-op elsewhere.
 func ResetDwmFrame(hwnd uintptr) {}
 
-// HideWindow / ShowWindow no-op on macOS for now (auto-hide is Windows-only v1).
+// HideWindow / ShowWindow no-op on macOS for now.
 func HideWindow(hwnd uintptr) {}
 func ShowWindow(hwnd uintptr) {}
 
-// MoveWindow no-op on macOS for now (slide animation is Windows-only v1).
+// MoveWindow no-op on macOS for now.
 func MoveWindow(hwnd uintptr, x, y int) {}
 
 // SetWindowClipTop no-op on macOS for now.
@@ -167,5 +146,5 @@ func SetClickThrough(hwnd uintptr, enabled bool) {
 	if enabled {
 		v = 1
 	}
-	C.platformSetClickThrough(C.int(v))
+	C.platformSetClickThrough(unsafe.Pointer(hwnd), C.int(v))
 }

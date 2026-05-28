@@ -4,8 +4,8 @@ import {
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
   SaveConfig, SetPinned, SetEditorOpen,
   GetRadioStreamURL, RefreshRadioStreamURL
-} from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+} from '../bindings/claudepanel/app.js';
+import { Events } from '@wailsio/runtime';
 
 const BAR_CHARS = 9;
 
@@ -183,10 +183,10 @@ async function init() {
 
     refreshId = setInterval(refresh, intervalMs);
 
-    EventsOn('config:changed',  refresh);
-    EventsOn('account:changed', refresh);
-    EventsOn('monitor:changed', updateMonitorDisplay);
-    EventsOn('show:accounts-editor', openAccountsEditor);
+    Events.On('config:changed',  refresh);
+    Events.On('account:changed', refresh);
+    Events.On('monitor:changed', updateMonitorDisplay);
+    Events.On('show:accounts-editor', openAccountsEditor);
     // Auto-hide slide animation is driven from Go (window position);
     // no JS-side animation state to manage.
 

@@ -16,7 +16,7 @@ mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-cp "$ROOT/build/bin/claudepanel" "$APPDIR/usr/bin/claudepanel"
+cp "$ROOT/bin/claudepanel" "$APPDIR/usr/bin/claudepanel"
 chmod +x "$APPDIR/usr/bin/claudepanel"
 
 cp "$ROOT/build/linux/claudepanel.desktop" "$APPDIR/usr/share/applications/claudepanel.desktop"

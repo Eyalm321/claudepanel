@@ -4,10 +4,9 @@ import (
 	"embed"
 	"log"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/leaanthony/u"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -18,9 +17,21 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 
-	err := wails.Run(&options.App{
-		// Title intentionally blank: with WebviewIsTransparent the title text
-		// can bleed through the frame when the window loses focus.
+	wailsApp := application.New(application.Options{
+		Name:        "Claude Panel",
+		Description: "Claude Code Usage Panel",
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Mac: application.MacOptions{
+			ActivationPolicy: application.ActivationPolicyAccessory,
+		},
+		Services: []application.Service{
+			application.NewService(app),
+		},
+	})
+
+	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "",
 		Width:            1920,
 		Height:           app.cfg.BarHeight,
@@ -30,34 +41,25 @@ func main() {
 		Frameless:        true,
 		AlwaysOnTop:      true,
 		DisableResize:    true,
-		HideWindowOnClose: true,
-		// Match the bar's --bg colour. When the window is briefly visible
-		// before the slide-down animation starts on expand, we want the
-		// "pop in" frame to be dark-on-dark (window bg ≈ bar bg) so it's
-		// imperceptible. The actual hide is handled by ShowWindow(SW_HIDE)
-		// once the slide-up animation finishes.
-		BackgroundColour: &options.RGBA{R: 0x0B, G: 0x0C, B: 0x0E, A: 255},
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		OnStartup:  app.startup,
-		OnDomReady: app.domReady,
-		OnShutdown: app.shutdown,
-		Bind: []interface{}{
-			app,
-		},
-		CSSDragProperty:  "--wails-draggable",
-		CSSDragValue:     "drag",
-		Mac: &mac.Options{
-			Preferences: &mac.Preferences{
-				// Allow <audio>/<video> autoplay without a click. Requires the
-				// forked Wails v2 (see go.mod replace directive); upstream
-				// PR: https://github.com/wailsapp/wails/pull/5512.
-				EnableAutoplayWithoutUserAction: mac.Enabled,
+		Hidden:           true,
+		BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
+		Mac: application.MacWindow{
+			WebviewPreferences: application.MacWebviewPreferences{
+				EnableAutoplayWithoutUserAction: u.True,
 			},
 		},
 	})
 
+	// DOM Ready hook
+	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(e *application.WindowEvent) {
+		app.domReady(wailsApp, window)
+	})
+
+	// Startup hook
+	app.startup(wailsApp, window)
+
+	// Run the app
+	err := wailsApp.Run()
 	if err != nil {
 		log.Fatalf("Wails error: %v", err)
 	}

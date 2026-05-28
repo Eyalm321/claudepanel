@@ -32,7 +32,7 @@ recommends:
   - nodejs       # required for the statusline command to run
 
 contents:
-  - src: ./build/bin/claudepanel
+  - src: ./bin/claudepanel
     dst: /usr/bin/claudepanel
     file_info:
       mode: 0755
