@@ -13,6 +13,15 @@ type MonitorInfo struct {
 	DpiScale  float64 `json:"dpiScale"`  // e.g. 1.25 at 125%
 	IsPrimary bool    `json:"isPrimary"`
 	Name      string  `json:"name"`
+	// WorkTopOffset is the number of points/pixels between the monitor's true
+	// top edge (Top) and where the bar's *resting* top lives. On macOS this is
+	// the menu bar height (the menu bar is non-removable and always above the
+	// bar's window level), so the bar sits at Top + WorkTopOffset. On Windows
+	// and Linux this is 0 — the bar occupies the very top of the monitor and
+	// the existing AppBar mechanism reserves the strip. Used by the slide
+	// animation target and the hover-detection hit box so they agree with
+	// where DockToMonitor actually places the window.
+	WorkTopOffset int `json:"workTopOffset"`
 }
 
 // PushdownStats contains diagnostic information about macOS window pushdown.

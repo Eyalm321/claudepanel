@@ -13,6 +13,7 @@ typedef struct {
     int width;
     int height;
     int physWidth;
+    int workTopOffset;
     double dpiScale;
     int isPrimary;
     const char* name;
@@ -29,6 +30,7 @@ CMonitor platformGetScreen(int idx) {
     NSScreen* s = [screens objectAtIndex:idx];
     NSScreen* mainScreen = [NSScreen mainScreen];
     NSRect frame = s.frame;
+    NSRect visible = s.visibleFrame;
     CGFloat scale = s.backingScaleFactor;
     // Convert NSScreen's bottom-left origin to our top-left convention,
     // flipped against the primary (zero-origin) screen height.
@@ -37,6 +39,14 @@ CMonitor platformGetScreen(int idx) {
     m.top = (int)(primaryH - frame.origin.y - frame.size.height);
     m.width = (int)frame.size.width;
     m.height = (int)frame.size.height;
+    // Menu-bar height for THIS screen. NSScreen.visibleFrame already excludes
+    // both the menu bar and the Dock; the menu bar is exactly the slice above
+    // (visible.origin.y + visible.size.height) inside frame. Secondary screens
+    // without a menu bar end up with workTopOffset = 0.
+    int menuBarH = (int)(frame.size.height -
+                         (visible.origin.y + visible.size.height));
+    if (menuBarH < 0) menuBarH = 0;
+    m.workTopOffset = menuBarH;
     // On macOS, all the consumers of PhysWidth (window framing, hover hit
     // detection) work in points, not pixels — NSWindow.setFrame takes points,
     // NSEvent.mouseLocation returns points. Reporting points here keeps the
@@ -58,15 +68,16 @@ func GetMonitors() []MonitorInfo {
 	for i := 0; i < count; i++ {
 		cm := C.platformGetScreen(C.int(i))
 		out = append(out, MonitorInfo{
-			Index:     i,
-			Left:      int32(cm.left),
-			Top:       int32(cm.top),
-			Width:     int(cm.width),
-			Height:    int(cm.height),
-			PhysWidth: int(cm.physWidth),
-			DpiScale:  float64(cm.dpiScale),
-			IsPrimary: cm.isPrimary != 0,
-			Name:      C.GoString(cm.name),
+			Index:         i,
+			Left:          int32(cm.left),
+			Top:           int32(cm.top),
+			Width:         int(cm.width),
+			Height:        int(cm.height),
+			PhysWidth:     int(cm.physWidth),
+			WorkTopOffset: int(cm.workTopOffset),
+			DpiScale:      float64(cm.dpiScale),
+			IsPrimary:     cm.isPrimary != 0,
+			Name:          C.GoString(cm.name),
 		})
 	}
 	return out

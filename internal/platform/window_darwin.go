@@ -55,14 +55,17 @@ void platformDockToMonitor(void* nsWindow, int left, int top, int width, int hei
     runOnMain(^{
         NSWindow* w = (__bridge NSWindow*)nsWindow;
         if (!w) return;
-        // The system menu bar always renders above every window level, so we
-        // position at the top of [NSScreen visibleFrame] (the area below the
-        // menu bar) rather than at the screen's true top edge.
+        // Caller passes (left, top) already in our top-left-origin convention
+        // with WorkTopOffset (menu-bar height) baked in — so `top` is the
+        // bar's resting top edge below the menu bar. Convert to Cocoa
+        // bottom-left for setFrame. Using the caller's precomputed top keeps
+        // this routine in lockstep with setBarExpanded/animateY (which also
+        // compute against mon.Top + WorkTopOffset).
         NSScreen* main = [NSScreen mainScreen];
         if (!main) return;
-        NSRect visible = [main visibleFrame];
-        CGFloat y = visible.origin.y + visible.size.height - (CGFloat)height;
-        NSRect frame = NSMakeRect((CGFloat)left, y, (CGFloat)width, (CGFloat)height);
+        CGFloat primaryH = main.frame.size.height;
+        CGFloat cocoaY = primaryH - (CGFloat)top - (CGFloat)height;
+        NSRect frame = NSMakeRect((CGFloat)left, cocoaY, (CGFloat)width, (CGFloat)height);
         [w setFrame:frame display:YES];
         // Mirror the Windows DockToMonitor (SWP_SHOWWINDOW): explicitly order
         // the window in. The Wails options set Hidden:true so the framework
@@ -151,8 +154,9 @@ func ApplyBarStyles(hwnd uintptr) {
 
 func DockToMonitor(hwnd uintptr, mon MonitorInfo, barHeight int, appBarMode bool) {
 	// NSWindow geometry uses POINTS, so pass mon.Width (points), NOT PhysWidth
-	// (Retina pixels).
-	C.platformDockToMonitor(unsafe.Pointer(hwnd), C.int(mon.Left), C.int(mon.Top), C.int(mon.Width), C.int(barHeight))
+	// (Retina pixels). Top is offset by the menu-bar height so the bar rests
+	// in the visible work area, matching what setBarExpanded uses.
+	C.platformDockToMonitor(unsafe.Pointer(hwnd), C.int(mon.Left), C.int(int(mon.Top)+mon.WorkTopOffset), C.int(mon.Width), C.int(barHeight))
 }
 
 func RemoveAppBar(hwnd uintptr) {

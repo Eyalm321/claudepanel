@@ -160,8 +160,14 @@ func (a *App) cursorOverBar() bool {
 	if width == 0 {
 		width = mon.Width
 	}
+	// The hover hit box runs from the monitor's true top edge down to the
+	// bar's bottom edge. On macOS the bar rests at Top+WorkTopOffset (below
+	// the menu bar); we still want cursor presence in the menu-bar slice
+	// above the bar to count as "on the bar" so the user can reveal it from
+	// the screen edge. On Windows/Linux WorkTopOffset is 0 and this collapses
+	// to the original [Top, Top+BarHeight] check.
 	return cx >= int(mon.Left) && cx < int(mon.Left)+width &&
-		cy >= int(mon.Top) && cy < int(mon.Top)+a.cfg.BarHeight
+		cy >= int(mon.Top) && cy < int(mon.Top)+mon.WorkTopOffset+a.cfg.BarHeight
 }
 
 func (a *App) checkHover() {
@@ -196,8 +202,11 @@ func (a *App) setBarExpanded(expanded bool) {
 	a.applyClickThrough()
 
 	mon := a.monitors[a.cfg.Monitor]
-	onScreenY := int(mon.Top)
-	offScreenY := onScreenY - a.cfg.BarHeight
+	// Resting top accounts for any chrome above the bar (macOS menu bar).
+	// The off-screen target is computed from the monitor's TRUE top so the
+	// window clears the screen, not just the bar's resting slot.
+	onScreenY := int(mon.Top) + mon.WorkTopOffset
+	offScreenY := int(mon.Top) - a.cfg.BarHeight
 	target := onScreenY
 	if !expanded {
 		target = offScreenY
