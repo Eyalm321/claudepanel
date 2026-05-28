@@ -286,12 +286,21 @@ async function togglePin() {
 
 document.getElementById('seg-pin').addEventListener('click', togglePin);
 
-// ── Radio Player (Claude FM background audio streaming) ─────────────────────
+// ── Radio Player (background audio streaming) ────────────────────────────────
 // Single audio path for all platforms. The Go side resolves the livestream's
-// HLS manifest URL via GetRadioStreamURL() and we feed it to an <audio>
+// HLS manifest URL via GetRadioStreamURL(videoId) and we feed it to an <audio>
 // element. Safari/WKWebView plays HLS natively; for Chromium-based WebViews
 // (WebView2 on Windows, some WebKit2GTK builds on Linux) we lazy-load hls.js
 // only when needed, so macOS doesn't pay the bundle cost.
+// Station display names are constrained by .radio-title-wrap (~9 chars).
+// EWrX250Zhko is Lofi Girl's "lofi hip hop radio" 24/7 livestream.
+const STATIONS = [
+  { name: 'CLAUDE FM', id: 'YmQ7jRgf4f0' },
+  { name: 'LOFI GIRL', id: 'EWrX250Zhko' },
+];
+let activeStationIdx = parseInt(localStorage.getItem('claudepanel-fm-station') || '0', 10);
+if (activeStationIdx < 0 || activeStationIdx >= STATIONS.length) activeStationIdx = 0;
+
 let isRadioPlaying = false;
 let currentVolume = parseInt(localStorage.getItem('claudepanel-fm-volume') || '100', 10);
 
@@ -299,6 +308,8 @@ const audioEl = document.getElementById('audio-radio');
 const supportsNativeHls = audioEl && audioEl.canPlayType('application/vnd.apple.mpegurl') !== '';
 
 let hls = null; // hls.js instance, created on first play when native HLS is unavailable.
+
+function activeStation() { return STATIONS[activeStationIdx]; }
 
 function updateVolumeUI() {
   const volEl = document.getElementById('radio-vol');
@@ -331,18 +342,19 @@ function setRadioStatus(state) {
   const statusEl = document.getElementById('radio-status');
   const titleEl  = document.getElementById('radio-title');
   if (!statusEl) return;
+  const stationName = activeStation().name;
   switch (state) {
     case 'load':
       statusEl.textContent = '[LOAD]';
       statusEl.className = 'val loading';
-      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
     case 'on':
       isRadioPlaying = true;
       statusEl.textContent = '[ON]';
       statusEl.className = 'val playing';
       if (titleEl) {
-        titleEl.textContent = 'NOW PLAYING CLAUDE FM · NOW PLAYING CLAUDE FM · ';
+        titleEl.textContent = `NOW PLAYING ${stationName} · NOW PLAYING ${stationName} · `;
         titleEl.classList.add('marquee');
       }
       break;
@@ -350,13 +362,13 @@ function setRadioStatus(state) {
       isRadioPlaying = false;
       statusEl.textContent = '[OFF]';
       statusEl.className = 'val';
-      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
     case 'err':
       isRadioPlaying = false;
       statusEl.textContent = '[ERR]';
       statusEl.className = 'val';
-      if (titleEl) { titleEl.textContent = 'CLAUDE FM'; titleEl.classList.remove('marquee'); }
+      if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
   }
 }
@@ -374,7 +386,7 @@ function wireAudioEvents() {
     if (hls) return; // hls.js owns recovery in that path.
     console.error('audio error', audioEl.error);
     try {
-      const fresh = await RefreshRadioStreamURL();
+      const fresh = await RefreshRadioStreamURL(activeStation().id);
       if (fresh) {
         audioEl.src = fresh;
         await audioEl.play();
@@ -406,7 +418,7 @@ async function attachHlsJs(url) {
     // source; for media errors, let hls.js try its own recovery once.
     if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
       try {
-        const fresh = await RefreshRadioStreamURL();
+        const fresh = await RefreshRadioStreamURL(activeStation().id);
         if (fresh) {
           hls.loadSource(fresh);
           return;
@@ -429,10 +441,11 @@ async function toggleRadio() {
       audioEl.pause();
       return;
     }
-    // First play: resolve URL and attach via native HLS or hls.js.
+    // First play (or play after a station switch reset us): resolve URL and
+    // attach via native HLS or hls.js.
     if (!audioEl.src && !hls) {
       setRadioStatus('load');
-      const url = await GetRadioStreamURL();
+      const url = await GetRadioStreamURL(activeStation().id);
       if (!url) {
         setRadioStatus('err');
         return;
@@ -451,8 +464,36 @@ async function toggleRadio() {
   }
 }
 
+// Tear down the current source/player so the next toggleRadio() resolves the
+// new station's URL from scratch. Used by station switching.
+function resetRadioSource() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  if (audioEl) {
+    audioEl.pause();
+    audioEl.removeAttribute('src');
+    audioEl.load(); // flush internal buffer
+  }
+  isRadioPlaying = false;
+}
+
+async function cycleStation(dir) {
+  const wasPlaying = isRadioPlaying;
+  activeStationIdx = (activeStationIdx + dir + STATIONS.length) % STATIONS.length;
+  localStorage.setItem('claudepanel-fm-station', String(activeStationIdx));
+  resetRadioSource();
+  setRadioStatus('off');
+  if (wasPlaying) {
+    await toggleRadio();
+  }
+}
+
 const radioSeg = document.getElementById('seg-radio');
 radioSeg.addEventListener('click', (e) => {
+  if (e.target.id === 'btn-radio-prev') { cycleStation(-1); return; }
+  if (e.target.id === 'btn-radio-next') { cycleStation(+1); return; }
   if (e.target.id === 'radio-vol' || e.target.id === 'radio-vol-lbl') {
     cycleVolume();
     return;
@@ -467,6 +508,8 @@ radioSeg.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 updateVolumeUI();
+// Render the persisted station name into the title (HTML default is CLAUDE FM).
+setRadioStatus('off');
 
 // ── Accounts Editor Controller ───────────────────────────────────────────────
 let editorConfig = null;

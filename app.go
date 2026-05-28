@@ -430,18 +430,18 @@ func (a *App) GetVersion() string {
 	return Version
 }
 
-// GetRadioStreamURL resolves the Claude FM livestream to an HLS manifest URL
-// suitable for a top-level <audio> element. Used by macOS/Safari WebViews
-// that support HLS natively; Windows WebView2 still uses the YT IFrame path.
-func (a *App) GetRadioStreamURL() (string, error) {
-	return a.radio.StreamURL(a.ctx, false)
+// GetRadioStreamURL resolves the given YouTube livestream video ID to an HLS
+// manifest URL suitable for a top-level <audio> element. The frontend owns
+// the station list and passes the active video ID per call.
+func (a *App) GetRadioStreamURL(videoID string) (string, error) {
+	return a.radio.StreamURL(a.ctx, videoID, false)
 }
 
-// RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL.
-// Frontend should call this when audio.onerror fires (signed URL may have
-// expired or rotated).
-func (a *App) RefreshRadioStreamURL() (string, error) {
-	return a.radio.StreamURL(a.ctx, true)
+// RefreshRadioStreamURL forces a re-resolve, bypassing the cached URL for
+// the given video ID. Frontend should call this when hls.js or the <audio>
+// element fires a fatal error (signed URL may have expired or rotated).
+func (a *App) RefreshRadioStreamURL(videoID string) (string, error) {
+	return a.radio.StreamURL(a.ctx, videoID, true)
 }
 
 func (a *App) SetPinned(pinned bool) error {

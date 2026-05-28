@@ -10,11 +10,11 @@ export function GetConfig():Promise<config.Config>;
 
 export function GetMonitors():Promise<Array<platform.MonitorInfo>>;
 
-export function GetRadioStreamURL():Promise<string>;
+export function GetRadioStreamURL(arg1:string):Promise<string>;
 
 export function GetVersion():Promise<string>;
 
-export function RefreshRadioStreamURL():Promise<string>;
+export function RefreshRadioStreamURL(arg1:string):Promise<string>;
 
 export function SaveConfig(arg1:config.Config):Promise<void>;
 
