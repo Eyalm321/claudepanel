@@ -21,7 +21,7 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     if ([keyPath isEqualToString:@"status"]) {
-        AVPlayerItemStatus status = [[change objectForKey:NSKeyValueObservingOptionNew] integerValue];
+        AVPlayerItemStatus status = [[change objectForKey:NSKeyValueChangeNewKey] integerValue];
         if (status == AVPlayerItemStatusReadyToPlay) {
             goDarwinPlayerCallback(_goPlayer, "playing", NULL);
         } else if (status == AVPlayerItemStatusFailed) {
@@ -30,7 +30,7 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
             goDarwinPlayerCallback(_goPlayer, "error", [errStr UTF8String]);
         }
     } else if ([keyPath isEqualToString:@"rate"]) {
-        float rate = [[change objectForKey:NSKeyValueObservingOptionNew] floatValue];
+        float rate = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
         if (rate == 0.0) {
             goDarwinPlayerCallback(_goPlayer, "paused", NULL);
         } else {
