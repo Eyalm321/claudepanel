@@ -379,12 +379,20 @@ static void attachObserverToApp(pid_t pid, NSString* bundleID) {
         return;
     }
 
+    // Subscribe to ONLY the events that actually warrant a push. The earlier
+    // version also listened for window-created, focused-window-changed, and
+    // (mis-spelled) deminimized — those fire constantly from normal desktop
+    // interactions (every click on the desktop fires AXFocusedWindowChanged
+    // from Finder), and each one fell to pushWindow on whatever element the
+    // notification carried. Some of those elements are special (Finder's
+    // desktop "window", brand-new windows that haven't finished initialising)
+    // and AX calls on them have been the proximate cause of crashes whenever
+    // the user clicks the desktop / opens a new window. Move + Resize are
+    // the only events the pushdown contract actually depends on, and they
+    // already cover the dragging / maximise paths.
     NSArray* notifications = @[
-        (__bridge NSString*)kAXWindowCreatedNotification,
         (__bridge NSString*)kAXWindowMovedNotification,
         (__bridge NSString*)kAXWindowResizedNotification,
-        (__bridge NSString*)kAXFocusedWindowChangedNotification,
-        @"AXWindowDeminimized"
     ];
 
     for (NSString* notif in notifications) {
@@ -425,11 +433,24 @@ static void detachObserverFromApp(pid_t pid) {
 }
 
 static void sweepAllRunningApps(void) {
-    NSArray* apps = [[NSWorkspace sharedWorkspace] runningApplications];
-    for (NSRunningApplication* app in apps) {
-        if (app.activationPolicy == NSApplicationActivationPolicyRegular) {
-            attachObserverToApp(app.processIdentifier, app.bundleIdentifier);
+    // [NSWorkspace sharedWorkspace] runningApplications is documented as
+    // main-thread on modern macOS; calling it from the pushdown queue has
+    // shown up in crash reports for some users. Snapshot (pid, bundleId)
+    // pairs on the main thread, then attach observers back on our queue.
+    __block NSArray<NSDictionary*>* snapshot = nil;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        NSMutableArray<NSDictionary*>* items = [NSMutableArray array];
+        for (NSRunningApplication* app in [[NSWorkspace sharedWorkspace] runningApplications]) {
+            if (app.activationPolicy != NSApplicationActivationPolicyRegular) continue;
+            NSString* bid = app.bundleIdentifier ?: @"";
+            [items addObject:@{ @"pid": @(app.processIdentifier), @"bid": bid }];
         }
+        snapshot = items;
+    });
+    for (NSDictionary* item in snapshot) {
+        pid_t pid = (pid_t)[item[@"pid"] intValue];
+        NSString* bid = item[@"bid"];
+        attachObserverToApp(pid, bid);
     }
 }
 
