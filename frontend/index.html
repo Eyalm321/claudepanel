@@ -135,20 +135,11 @@
 
   </div>
 
-  <!-- Radio playback. We pick one of two paths at runtime based on whether
-       the host WebView can natively play HLS:
-         macOS WKWebView -> <audio> element with an HLS manifest URL resolved
-           server-side (sidesteps YouTube's cross-origin iframe gating, which
-           silently swallows unMute() in WKWebView even with the autoplay
-           grant). See internal/radio + app.GetRadioStreamURL().
-         Windows WebView2 / Linux WebKit2GTK -> YouTube IFrame embed (WebView2
-           lacks native HLS; iframe path works there without the muted-autoplay
-           gate that bites macOS). The off-screen container gives the iframe
-           the non-zero size YouTube's visibility check requires (>=200x200). -->
+  <!-- Radio playback: HLS manifest URL resolved by the Go side and played
+       via a top-level <audio>. Safari/WKWebView plays HLS natively; other
+       WebViews (WebView2, some WebKit2GTK builds) get hls.js lazy-loaded
+       on first play. See frontend/src/main.js. -->
   <audio id="audio-radio" preload="none"></audio>
-  <div id="yt-player-container" style="position: absolute; top: -9999px; left: -9999px; width: 200px; height: 200px; overflow: hidden; opacity: 0; pointer-events: none;">
-    <div id="yt-player"></div>
-  </div>
 
   <script src="./src/main.js" type="module"></script>
 </body>

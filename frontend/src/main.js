@@ -287,44 +287,29 @@ async function togglePin() {
 document.getElementById('seg-pin').addEventListener('click', togglePin);
 
 // ── Radio Player (Claude FM background audio streaming) ─────────────────────
-// Two playback paths, chosen at runtime based on whether the host WebView can
-// play HLS natively:
-//
-//   Native-HLS path  (macOS WKWebView): resolve the livestream's HLS manifest
-//     URL server-side via GetRadioStreamURL() and feed it to a top-level
-//     <audio> element. This sidesteps the YouTube IFrame's cross-origin
-//     gating, which silently swallows unMute() in WKWebView even with the
-//     mediaTypesRequiringUserActionForPlayback grant.
-//
-//   IFrame path  (Windows WebView2 / Linux WebKit2GTK): WebView2 (Chromium)
-//     has no native HLS, so we keep the YouTube IFrame embed there — it
-//     works on those platforms without the muted-autoplay gate that bites
-//     macOS.
-//
-// The branch is picked once at module load via <audio>.canPlayType().
+// Single audio path for all platforms. The Go side resolves the livestream's
+// HLS manifest URL via GetRadioStreamURL() and we feed it to an <audio>
+// element. Safari/WKWebView plays HLS natively; for Chromium-based WebViews
+// (WebView2 on Windows, some WebKit2GTK builds on Linux) we lazy-load hls.js
+// only when needed, so macOS doesn't pay the bundle cost.
 let isRadioPlaying = false;
 let currentVolume = parseInt(localStorage.getItem('claudepanel-fm-volume') || '100', 10);
 
 const audioEl = document.getElementById('audio-radio');
 const supportsNativeHls = audioEl && audioEl.canPlayType('application/vnd.apple.mpegurl') !== '';
 
+let hls = null; // hls.js instance, created on first play when native HLS is unavailable.
+
 function updateVolumeUI() {
   const volEl = document.getElementById('radio-vol');
-  if (volEl) {
-    volEl.textContent = currentVolume + '%';
-  }
+  if (volEl) volEl.textContent = currentVolume + '%';
 }
 
 function applyVolumeToPlayer() {
-  if (supportsNativeHls) {
-    if (audioEl) {
-      // <audio>.volume is 0..1; we clamp at 1 (boost above 100% would need
-      // a Web Audio GainNode and isn't implemented on this path).
-      audioEl.volume = Math.min(1, currentVolume / 100);
-    }
-  } else if (ytPlayer && typeof ytPlayer.setVolume === 'function') {
-    ytPlayer.setVolume(Math.round(currentVolume / 2));
-  }
+  if (!audioEl) return;
+  // <audio>.volume is 0..1; clamp at 1. Boost above 100% would need a
+  // Web Audio GainNode and isn't implemented here.
+  audioEl.volume = Math.min(1, currentVolume / 100);
 }
 
 function setVolume(vol) {
@@ -337,11 +322,7 @@ function setVolume(vol) {
 function cycleVolume() {
   let nextVol = currentVolume - 10;
   if (nextVol < 0) {
-    if (currentVolume === 0) {
-      nextVol = 200;
-    } else {
-      nextVol = 0;
-    }
+    nextVol = currentVolume === 0 ? 200 : 0;
   }
   setVolume(nextVol);
 }
@@ -380,18 +361,18 @@ function setRadioStatus(state) {
   }
 }
 
-// ── Native-HLS path (macOS WKWebView) ────────────────────────────────────────
 let audioWired = false;
-
 function wireAudioEvents() {
   if (audioWired || !audioEl) return;
   audioWired = true;
   audioEl.addEventListener('playing', () => setRadioStatus('on'));
   audioEl.addEventListener('pause',   () => setRadioStatus('off'));
   audioEl.addEventListener('ended',   () => setRadioStatus('off'));
-  audioEl.addEventListener('error',   async (e) => {
-    console.error('audio error', audioEl.error, e);
-    // Signed URL may have expired or rotated — re-resolve once and retry.
+  // Native-HLS path only — hls.js dispatches its own ERROR events and
+  // we handle URL refresh there to avoid double-firing this handler.
+  audioEl.addEventListener('error',   async () => {
+    if (hls) return; // hls.js owns recovery in that path.
+    console.error('audio error', audioEl.error);
     try {
       const fresh = await RefreshRadioStreamURL();
       if (fresh) {
@@ -406,102 +387,70 @@ function wireAudioEvents() {
   });
 }
 
-async function toggleRadioAudio() {
+async function attachHlsJs(url) {
+  const { default: Hls } = await import('hls.js');
+  if (!Hls.isSupported()) {
+    throw new Error('hls.js: Media Source Extensions not supported in this WebView');
+  }
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  hls = new Hls();
+  hls.attachMedia(audioEl);
+  hls.loadSource(url);
+  hls.on(Hls.Events.ERROR, async (_event, data) => {
+    console.error('hls.js error', data.type, data.details, data.fatal);
+    if (!data.fatal) return;
+    // Fatal — try to recover. For network errors, re-resolve and reload the
+    // source; for media errors, let hls.js try its own recovery once.
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+      try {
+        const fresh = await RefreshRadioStreamURL();
+        if (fresh) {
+          hls.loadSource(fresh);
+          return;
+        }
+      } catch (refreshErr) {
+        console.error('refresh stream url failed', refreshErr);
+      }
+    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+      hls.recoverMediaError();
+      return;
+    }
+    setRadioStatus('err');
+  });
+}
+
+async function toggleRadio() {
   wireAudioEvents();
   try {
     if (isRadioPlaying) {
       audioEl.pause();
       return;
     }
-    if (!audioEl.src) {
+    // First play: resolve URL and attach via native HLS or hls.js.
+    if (!audioEl.src && !hls) {
       setRadioStatus('load');
       const url = await GetRadioStreamURL();
       if (!url) {
         setRadioStatus('err');
         return;
       }
-      audioEl.src = url;
+      if (supportsNativeHls) {
+        audioEl.src = url;
+      } else {
+        await attachHlsJs(url);
+      }
     }
     applyVolumeToPlayer();
     await audioEl.play();
   } catch (err) {
-    console.error('Radio (audio) error:', err);
+    console.error('Radio error:', err);
     setRadioStatus('err');
   }
 }
 
-// ── IFrame path (Windows WebView2 / Linux WebKit2GTK) ────────────────────────
-let ytPlayer = null;
-let isYtApiLoaded = false;
-
-function loadYtIframeApi() {
-  return new Promise((resolve) => {
-    if (isYtApiLoaded) {
-      resolve();
-      return;
-    }
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-    window.onYouTubeIframeAPIReady = () => {
-      isYtApiLoaded = true;
-      resolve();
-    };
-  });
-}
-
-async function toggleRadioIframe() {
-  try {
-    if (!ytPlayer) {
-      setRadioStatus('load');
-      await loadYtIframeApi();
-      ytPlayer = new YT.Player('yt-player', {
-        // YouTube refuses to play in 0x0 iframes (visibility / anti-fraud
-        // heuristic — their docs require >=200x200). Container is off-screen
-        // and overflow-clipped in index.html.
-        height: '200',
-        width: '200',
-        videoId: 'YmQ7jRgf4f0',
-        playerVars: {
-          'playsinline': 1,
-          'controls': 0,
-          'disablekb': 1,
-          'fs': 0,
-          'rel': 0,
-          'autoplay': 1,
-          'mute': 1
-        },
-        events: {
-          'onReady': (event) => {
-            ytPlayer.setVolume(Math.round(currentVolume / 2));
-            event.target.unMute();
-            event.target.playVideo();
-            setRadioStatus('on');
-          },
-          'onStateChange': (event) => {
-            setRadioStatus(event.data === 1 ? 'on' : 'off');
-          }
-        }
-      });
-      return;
-    }
-
-    if (isRadioPlaying) {
-      ytPlayer.pauseVideo();
-    } else {
-      ytPlayer.playVideo();
-    }
-  } catch (err) {
-    console.error('Radio (iframe) error:', err);
-    setRadioStatus('err');
-  }
-}
-
-const toggleRadio = supportsNativeHls ? toggleRadioAudio : toggleRadioIframe;
-
-// Set up listeners
 const radioSeg = document.getElementById('seg-radio');
 radioSeg.addEventListener('click', (e) => {
   if (e.target.id === 'radio-vol' || e.target.id === 'radio-vol-lbl') {
@@ -517,7 +466,6 @@ radioSeg.addEventListener('wheel', (e) => {
   setVolume(currentVolume + diff);
 }, { passive: false });
 
-// Initialize volume display on load
 updateVolumeUI();
 
 // ── Accounts Editor Controller ───────────────────────────────────────────────
