@@ -84,7 +84,7 @@ tasks:
   install:frontend:deps:npm:
     dir: '{{.TASKFILE_DIR}}/frontend'
     cmds:
-      - echo "Npm dependencies already installed."
+      - npm install
 
   install:frontend:deps:bun:
     dir: frontend
