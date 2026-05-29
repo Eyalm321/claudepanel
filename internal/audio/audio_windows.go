@@ -1,4 +1,5 @@
 //go:build windows
+
 package audio
 
 import (
@@ -36,10 +37,20 @@ $ErrorActionPreference = "Stop"
 
 $player = New-Object Windows.Media.Playback.MediaPlayer
 
+# Natural end-of-track detection. Windows PowerShell cannot subscribe to WinRT
+# events (Register-ObjectEvent on MediaPlayer.MediaEnded fails), and at EOS the
+# PlaybackState merely collapses to "Paused" — indistinguishable from a user
+# pause by state alone. But at a *natural* end the playback position equals the
+# media's duration, whereas a user pause lands strictly short of it. So the
+# existing 100ms "state" poll reports STATE:Ended exactly once when
+# pos >= dur (state Paused), gated by $script:endedReported to avoid repeats.
+$script:endedReported = $false
+
 while ($line = [Console]::ReadLine()) {
     try {
         if ($line -like "play *") {
             $url = $line.Substring(5)
+            $script:endedReported = $false
             $uri = New-Object System.Uri($url)
             $source = [Windows.Media.Core.MediaSource]::CreateFromUri($uri)
             $player.Source = $source
@@ -55,7 +66,16 @@ while ($line = [Console]::ReadLine()) {
             if ($vol -gt 1.0) { $vol = 1.0 }
             $player.Volume = $vol
         } elseif ($line -eq "state") {
-            Write-Host "STATE:$($player.PlaybackSession.PlaybackState)"
+            $sess = $player.PlaybackSession
+            $st = $sess.PlaybackState
+            $dur = $sess.NaturalDuration.TotalSeconds
+            $pos = $sess.Position.TotalSeconds
+            if (-not $script:endedReported -and $dur -gt 0 -and $pos -ge ($dur - 0.5) -and "$st" -eq "Paused") {
+                $script:endedReported = $true
+                Write-Host "STATE:Ended"
+            } else {
+                Write-Host "STATE:$st"
+            }
         } elseif ($line -eq "exit") {
             break
         }
@@ -123,6 +143,9 @@ func (p *WindowsPlayer) handlePlayState(stateStr string) {
 		p.emit(Event{State: StatePlaying})
 	case "Paused":
 		p.emit(Event{State: StatePaused})
+	case "Ended":
+		// Natural end-of-track (drained from the MediaEnded flag by the poll).
+		p.emit(Event{State: StateEnded})
 	}
 }
 

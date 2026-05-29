@@ -69,6 +69,16 @@
 
       <div class="spacer"></div>
 
+      <!-- Terminal launcher cycler: ◀ ● NAME ▶ — click name/dot to open a labeled terminal -->
+      <div class="seg seg--nodrag" id="seg-term" title="Click name to open a labeled terminal · ◀ ▶ to switch">
+        <span class="arrow" id="btn-term-prev">◀</span>
+        <span class="dot" id="dot-term"></span>
+        <span class="val" id="val-term">---</span>
+        <span class="arrow" id="btn-term-next">▶</span>
+      </div>
+
+      <div class="sep" id="sep-term">·</div>
+
       <!-- Radio Toggle: ◀ CLAUDE FM ▶ [STATUS] · VOL XX% -->
       <div class="seg seg--nodrag" id="seg-radio" title="Click title to play/pause. ◀ ▶ switches station. Scroll/click VOL to adjust volume.">
         <span class="arrow" id="btn-radio-prev">◀</span>
@@ -106,33 +116,6 @@
       <div class="seg seg--nodrag" id="seg-pin" title="Pin / unpin (auto-hide on mouseleave)">
         <svg class="pin-icon" id="icon-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
       </div>
-    </div>
-
-    <!-- Accounts Editor overlay (Inline horizontal panel, hidden by default) -->
-    <div id="bar-editor-contents" style="display: none; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 100%;">
-      <button id="btn-acct-close" class="editor-btn">BACK</button>
-
-      <!-- List Controls (Hidden during Edit/Add) -->
-      <div id="editor-list-controls" style="display: flex; align-items: center; gap: 8px;">
-        <span class="lbl">ACCOUNTS:</span>
-        <select id="editor-acct-select" class="editor-select"></select>
-        
-        <button id="btn-acct-edit" class="editor-btn">EDIT</button>
-        <button id="btn-acct-add" class="editor-btn">ADD</button>
-        <button id="btn-acct-del" class="editor-btn">DELETE</button>
-      </div>
-      
-      <!-- Sub-form for adding/editing (Hidden by default, replaces List Controls when editing) -->
-      <div id="editor-form" style="display: none; align-items: center; gap: 5px;">
-        <span class="lbl">NAME:</span>
-        <input type="text" id="input-acct-name" class="editor-input" placeholder="main" style="width: 60px;">
-        <span class="lbl">PATH:</span>
-        <input type="text" id="input-acct-path" class="editor-input" placeholder="~/.claude" style="width: 170px;">
-        <button id="btn-acct-save" class="editor-btn editor-btn--accent">SAVE</button>
-        <button id="btn-acct-cancel" class="editor-btn">CANCEL</button>
-      </div>
-      
-      <div class="spacer"></div>
     </div>
 
   </div>

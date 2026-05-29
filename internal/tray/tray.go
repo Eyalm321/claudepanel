@@ -12,6 +12,8 @@ type Controller interface {
 	SetMonitor(index int) error
 	ToggleStartup()
 	ConfigureAccounts()
+	ConfigureTerminals()
+	ConfigureStations()
 	Quit()
 }
 
@@ -84,6 +86,16 @@ func (m *Manager) Build(
 	// Configure Accounts item
 	m.menu.Add("Configure Accounts...").OnClick(func(ctx *application.Context) {
 		controller.ConfigureAccounts()
+	})
+
+	// Configure Terminals item
+	m.menu.Add("Configure Terminals...").OnClick(func(ctx *application.Context) {
+		controller.ConfigureTerminals()
+	})
+
+	// Configure Stations item
+	m.menu.Add("Configure Stations...").OnClick(func(ctx *application.Context) {
+		controller.ConfigureStations()
 	})
 
 	m.menu.AddSeparator()

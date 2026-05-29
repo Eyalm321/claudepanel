@@ -19,6 +19,15 @@ func main() {
 	wailsApp := application.New(application.Options{
 		Name:        "Claude Panel",
 		Description: "Claude Code Usage Panel",
+		// Single-instance: a second launch fails to take the lock, pings the
+		// running instance (which re-reveals the bar) and exits immediately, so
+		// we never end up with two bars / two tray icons.
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.claudepanel.app",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				app.reveal()
+			},
+		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},

@@ -62,21 +62,22 @@ func (m *mockPlayer) Close() error {
 }
 
 type mockResolver struct {
-	mu           sync.Mutex
-	streamFunc   func(ctx context.Context, videoID string, forceRefresh bool) (string, error)
-	calls        []string
-	forceCalls   []bool
+	mu         sync.Mutex
+	streamFunc func(ctx context.Context, videoID string, forceRefresh bool) (string, error)
+	calls      []string
+	forceCalls []bool
 }
 
-func (r *mockResolver) StreamURL(ctx context.Context, videoID string, forceRefresh bool) (string, error) {
+func (r *mockResolver) Resolve(ctx context.Context, videoID string, forceRefresh bool) (ResolvedTrack, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, videoID)
 	r.forceCalls = append(r.forceCalls, forceRefresh)
 	r.mu.Unlock()
 	if r.streamFunc != nil {
-		return r.streamFunc(ctx, videoID, forceRefresh)
+		url, err := r.streamFunc(ctx, videoID, forceRefresh)
+		return ResolvedTrack{URL: url}, err
 	}
-	return "http://test.url/" + videoID, nil
+	return ResolvedTrack{URL: "http://test.url/" + videoID}, nil
 }
 
 func TestController_PlayNormal(t *testing.T) {

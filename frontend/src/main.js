@@ -2,8 +2,9 @@ import './style.css';
 import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
-  SaveConfig, SetPinned, SetEditorOpen,
-  RadioPlay, RadioPause, RadioSetVolume
+  SaveConfig, SetPinned,
+  RadioPlayStation, RadioPause, RadioSetVolume, SetActiveStation,
+  OpenTerminal
 } from '../bindings/claudepanel/app.js';
 import { Events } from '@wailsio/runtime';
 
@@ -177,6 +178,18 @@ async function init() {
       document.getElementById('btn-mon-next').style.display = '';
     }
 
+    applyTermSegment();
+
+    // Radio stations (config-driven) + persisted selection/volume.
+    stations = (cfg && cfg.stations) || [];
+    activeStationIdx = (cfg && cfg.activeStation) || 0;
+    if (activeStationIdx >= stations.length) activeStationIdx = 0;
+    if (cfg && typeof cfg.radioVolume === 'number') {
+      currentVolume = Math.round(cfg.radioVolume * 100);
+    }
+    applyStationsUI();
+    updateVolumeUI();
+
     const intervalMs = ((cfg && cfg.refreshSeconds) || 15) * 1000;
     await refresh();
     await updateMonitorDisplay();
@@ -191,9 +204,10 @@ async function init() {
     }
 
     Events.On('config:changed',  refresh);
+    Events.On('config:changed',  refreshTerminals);
     Events.On('account:changed', refresh);
     Events.On('monitor:changed', updateMonitorDisplay);
-    Events.On('show:accounts-editor', openAccountsEditor);
+    Events.On('config:changed', refreshStations);
     // Auto-hide slide animation is driven from Go (window position);
     // no JS-side animation state to manage.
 
@@ -297,17 +311,30 @@ document.getElementById('seg-pin').addEventListener('click', togglePin);
 // The Go backend manages native playback and emits state events via 'radio:state'.
 // The frontend only maintains the station list and sends commands (play, pause, volume).
 
-const STATIONS = [
-  { name: 'CLAUDE FM', id: 'YmQ7jRgf4f0' },
-  { name: 'LOFI GIRL', id: 'EWrX250Zhko' },
-];
-let activeStationIdx = parseInt(localStorage.getItem('claudepanel-fm-station') || '0', 10);
-if (activeStationIdx < 0 || activeStationIdx >= STATIONS.length) activeStationIdx = 0;
-
+// Stations are config-driven now (managed from the tray "Configure Stations…").
+// The bar cycler indexes cfg.stations; the Go station engine owns the queue,
+// shuffle, auto-advance and looping. We only send a station index to play.
+let stations = [];
+let activeStationIdx = 0;
 let isRadioPlaying = false;
-let currentVolume = parseInt(localStorage.getItem('claudepanel-fm-volume') || '100', 10);
+let currentVolume = 100;
 
-function activeStation() { return STATIONS[activeStationIdx]; }
+function activeStation() {
+  if (!stations.length) return { name: '---' };
+  if (activeStationIdx < 0 || activeStationIdx >= stations.length) activeStationIdx = 0;
+  return stations[activeStationIdx];
+}
+
+// Show the cycler arrows only when there's more than one station; refresh the
+// idle title. Called after config (re)loads.
+function applyStationsUI() {
+  const prev = document.getElementById('btn-radio-prev');
+  const next = document.getElementById('btn-radio-next');
+  const show = stations.length >= 2 ? '' : 'none';
+  if (prev) prev.style.display = show;
+  if (next) next.style.display = show;
+  if (!isRadioPlaying) setRadioStatus('off');
+}
 
 function updateVolumeUI() {
   const volEl = document.getElementById('radio-vol');
@@ -373,7 +400,9 @@ function setRadioStatus(state) {
 Events.On('radio:state', (event) => {
   const data = event ? event.data : null;
   if (!data) return;
-  if (data.videoID && data.videoID !== activeStation().id) {
+  // Filter to the active station: the engine stamps each event with its index
+  // (the playing videoID changes per track as the queue auto-advances).
+  if (typeof data.stationIdx === 'number' && data.stationIdx !== activeStationIdx) {
     return;
   }
   switch (data.state) {
@@ -382,6 +411,10 @@ Events.On('radio:state', (event) => {
       break;
     case 'playing':
       setRadioStatus('on');
+      break;
+    case 'ended':
+      // Transient: a track finished and the engine is advancing to the next
+      // one. Keep showing "playing" — a fresh loading/playing will follow.
       break;
     case 'paused':
       setRadioStatus('off');
@@ -397,12 +430,13 @@ Events.On('radio:state', (event) => {
 });
 
 async function toggleRadio() {
+  if (!stations.length) return;
   try {
     if (isRadioPlaying) {
       await RadioPause();
     } else {
       setRadioStatus('load');
-      await RadioPlay(activeStation().id);
+      await RadioPlayStation(activeStationIdx);
     }
   } catch (err) {
     console.error('Radio error:', err);
@@ -411,13 +445,15 @@ async function toggleRadio() {
 }
 
 async function cycleStation(dir) {
+  if (stations.length < 2) return;
   const wasPlaying = isRadioPlaying;
-  activeStationIdx = (activeStationIdx + dir + STATIONS.length) % STATIONS.length;
-  localStorage.setItem('claudepanel-fm-station', String(activeStationIdx));
-  
+  activeStationIdx = (activeStationIdx + dir + stations.length) % stations.length;
+  try { await SetActiveStation(activeStationIdx); } catch (e) { /* non-fatal */ }
+
   if (wasPlaying) {
     try {
-      await RadioPlay(activeStation().id);
+      setRadioStatus('load');
+      await RadioPlayStation(activeStationIdx);
     } catch (e) {
       console.error('Failed to switch station:', e);
       setRadioStatus('err');
@@ -447,176 +483,92 @@ radioSeg.addEventListener('wheel', async (e) => {
 updateVolumeUI();
 setRadioStatus('off');
 
-// ── Accounts Editor Controller ───────────────────────────────────────────────
-let editorConfig = null;
-let editorFormMode = "edit"; // "edit" or "add"
+// Account, terminal and station editing now live in a separate popup window
+// (settings.html / src/settings/*), opened from the tray "Configure…" items.
+// The bar only keeps its cyclers below.
 
-async function openAccountsEditor() {
-  try {
-    editorConfig = await GetConfig();
+// ── Terminal launcher cycler ─────────────────────────────────────────────────
+// ◀ ● NAME ▶ — clicking the name (or dot) opens a new, labeled terminal running
+// `claude` in the entry's directory. Mirrors cycleMon/cycleTheme. The segment is
+// hidden entirely when no launchers are configured (like the account arrows when
+// fewer than two accounts).
+let activeTermIdx = 0;
 
-    // Hide standard bar segments
-    document.getElementById('bar-main-contents').style.display = 'none';
-
-    // Populate select dropdown
-    renderEditorSelect();
-
-    // Reset inputs & hide the form segment
-    hideEditorForm();
-
-    // Show the editor panel
-    document.getElementById('bar-editor-contents').style.display = 'flex';
-
-    // Tell the Go-side hover-watcher to keep the bar expanded (and force-expand
-    // it immediately, since the editor is opened from the tray with the cursor
-    // off-bar).
-    SetEditorOpen(true);
-  } catch (err) {
-    console.error('Failed to open accounts editor:', err);
+function applyTermSegment() {
+  const seg = document.getElementById('seg-term');
+  const sep = document.getElementById('sep-term');
+  const terms = (cfg && cfg.terminals) || [];
+  if (terms.length === 0) {
+    if (seg) seg.style.display = 'none';
+    if (sep) sep.style.display = 'none';
+    return;
   }
-}
+  if (seg) seg.style.display = '';
+  if (sep) sep.style.display = '';
+  if (activeTermIdx >= terms.length) activeTermIdx = 0;
 
-function renderEditorSelect() {
-  const select = document.getElementById('editor-acct-select');
-  if (!select) return;
-  select.innerHTML = '';
-  
-  const accounts = editorConfig.accounts || [];
-  accounts.forEach((acc, index) => {
-    const opt = document.createElement('option');
-    opt.value = index;
-    opt.textContent = `${acc.name} (${acc.path})`;
-    select.appendChild(opt);
-  });
-  
-  // Select active one by default
-  const activeIdx = editorConfig.activeAccount || 0;
-  if (activeIdx < accounts.length) {
-    select.value = activeIdx;
-  }
-}
-
-function showEditorForm(mode) {
-  editorFormMode = mode;
-  const form = document.getElementById('editor-form');
-  const listControls = document.getElementById('editor-list-controls');
-  
-  if (form) form.style.display = 'flex';
-  if (listControls) listControls.style.display = 'none';
-  
-  const nameInput = document.getElementById('input-acct-name');
-  const pathInput = document.getElementById('input-acct-path');
-  
-  if (mode === 'add') {
-    if (nameInput) nameInput.value = '';
-    if (pathInput) pathInput.value = '';
-    if (nameInput) nameInput.focus();
+  const t = terms[activeTermIdx];
+  document.getElementById('val-term').textContent = (t.name || '---').toUpperCase();
+  const dot = document.getElementById('dot-term');
+  if (t.color) {
+    dot.style.background = t.color; // exact configured hex, inline (beats theme CSS)
+    dot.style.display = 'inline-block';
   } else {
-    // edit mode, fill with currently selected
-    const select = document.getElementById('editor-acct-select');
-    const idx = select ? parseInt(select.value, 10) : -1;
-    const accounts = editorConfig.accounts || [];
-    if (idx >= 0 && idx < accounts.length) {
-      if (nameInput) nameInput.value = accounts[idx].name;
-      if (pathInput) pathInput.value = accounts[idx].path;
-      if (nameInput) nameInput.focus();
-    }
+    dot.style.display = 'none';
   }
+
+  // Hide the arrows when there's only one entry to cycle through.
+  const showArrows = terms.length >= 2 ? '' : 'none';
+  document.getElementById('btn-term-prev').style.display = showArrows;
+  document.getElementById('btn-term-next').style.display = showArrows;
 }
 
-function hideEditorForm() {
-  const form = document.getElementById('editor-form');
-  const listControls = document.getElementById('editor-list-controls');
-  if (form) form.style.display = 'none';
-  if (listControls) listControls.style.display = 'flex';
+function cycleTerm(dir) {
+  const terms = (cfg && cfg.terminals) || [];
+  if (terms.length < 2) return;
+  activeTermIdx = (activeTermIdx + dir + terms.length) % terms.length;
+  applyTermSegment();
 }
 
-async function saveAccount() {
-  const nameInput = document.getElementById('input-acct-name');
-  const pathInput = document.getElementById('input-acct-path');
-  
-  const name = nameInput ? nameInput.value.trim() : '';
-  const path = pathInput ? pathInput.value.trim() : '';
-  
-  if (!name || !path) {
-    alert("Name and Path cannot be empty!");
-    return;
-  }
-  
-  const accounts = editorConfig.accounts || [];
-  
-  if (editorFormMode === 'add') {
-    accounts.push({ name: name, path: path });
-    editorConfig.activeAccount = accounts.length - 1;
-  } else {
-    // edit mode
-    const select = document.getElementById('editor-acct-select');
-    const idx = select ? parseInt(select.value, 10) : -1;
-    if (idx >= 0 && idx < accounts.length) {
-      accounts[idx] = { name: name, path: path };
-    }
-  }
-  
+// Re-read config and re-render the segment after any config change (editor save).
+async function refreshTerminals() {
   try {
-    editorConfig.accounts = accounts;
-    await SaveConfig(editorConfig);
-    
-    renderEditorSelect();
-    hideEditorForm();
-  } catch (err) {
-    console.error('Failed to save config:', err);
-    alert('Error saving config: ' + err);
-  }
+    cfg = await GetConfig();
+    applyTermSegment();
+  } catch (e) { /* ignore */ }
 }
 
-async function deleteAccount() {
-  const accounts = editorConfig.accounts || [];
-  if (accounts.length <= 1) {
-    alert("At least one account is required. Cannot delete!");
-    return;
-  }
-  
-  const select = document.getElementById('editor-acct-select');
-  const idx = select ? parseInt(select.value, 10) : -1;
-  if (idx < 0 || idx >= accounts.length) return;
-  
-  if (!confirm(`Are you sure you want to delete account "${accounts[idx].name}"?`)) {
-    return;
-  }
-  
-  accounts.splice(idx, 1);
-  
-  let activeIdx = editorConfig.activeAccount || 0;
-  if (activeIdx >= accounts.length) {
-    activeIdx = 0;
-  }
-  editorConfig.activeAccount = activeIdx;
-  
+let lastTermOpen = 0;
+async function openTerm() {
+  const terms = (cfg && cfg.terminals) || [];
+  if (terms.length === 0) return;
+  // ~400ms debounce so a fast double-click can't spawn two windows.
+  const now = Date.now();
+  if (now - lastTermOpen < 400) return;
+  lastTermOpen = now;
   try {
-    editorConfig.accounts = accounts;
-    await SaveConfig(editorConfig);
-    
-    renderEditorSelect();
-    hideEditorForm();
+    await OpenTerminal(activeTermIdx);
   } catch (err) {
-    console.error('Failed to delete account:', err);
-    alert('Error deleting: ' + err);
+    alert('Could not open terminal: ' + err);
   }
 }
 
-function closeAccountsEditor() {
-  document.getElementById('bar-editor-contents').style.display = 'none';
-  document.getElementById('bar-main-contents').style.display = 'flex';
-  SetEditorOpen(false);
-}
+document.getElementById('btn-term-prev').addEventListener('click', () => cycleTerm(-1));
+document.getElementById('btn-term-next').addEventListener('click', () => cycleTerm(+1));
+document.getElementById('val-term').addEventListener('click', openTerm);
+document.getElementById('dot-term').addEventListener('click', openTerm);
 
-// Bind editor listeners once DOM is ready
-document.getElementById('btn-acct-edit').addEventListener('click', () => showEditorForm('edit'));
-document.getElementById('btn-acct-add').addEventListener('click', () => showEditorForm('add'));
-document.getElementById('btn-acct-del').addEventListener('click', deleteAccount);
-document.getElementById('btn-acct-save').addEventListener('click', saveAccount);
-document.getElementById('btn-acct-cancel').addEventListener('click', hideEditorForm);
-document.getElementById('btn-acct-close').addEventListener('click', closeAccountsEditor);
+// ── Radio stations: bar cycler refresh ───────────────────────────────────────
+// Editing stations now lives in the settings popup; the bar only re-reads the
+// list after a save so its cycler reflects edits.
+async function refreshStations() {
+  try {
+    cfg = await GetConfig();
+    stations = (cfg && cfg.stations) || [];
+    if (activeStationIdx >= stations.length) activeStationIdx = 0;
+    applyStationsUI();
+  } catch (e) { /* ignore */ }
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);

@@ -12,10 +12,24 @@ import (
 	"claudepanel/internal/config"
 	"claudepanel/internal/platform"
 	"claudepanel/internal/radio"
+	"claudepanel/internal/station"
+	"claudepanel/internal/terminal"
 	"claudepanel/internal/tray"
+
+	"context"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// radioResolverAdapter bridges *radio.Resolver to the audio.StreamResolver
+// interface (different ResolvedTrack types keep the audio layer independent of
+// the youtube-backed radio package).
+type radioResolverAdapter struct{ r *radio.Resolver }
+
+func (a radioResolverAdapter) Resolve(ctx context.Context, videoID string, forceRefresh bool) (audio.ResolvedTrack, error) {
+	t, err := a.r.Resolve(ctx, videoID, forceRefresh)
+	return audio.ResolvedTrack{URL: t.URL, IsLive: t.IsLive}, err
+}
 
 // Version is set via -ldflags "-X main.Version=x.y.z" at build time.
 var Version = "dev"
@@ -33,6 +47,11 @@ type App struct {
 	trayMgr   *tray.Manager
 	radio     *radio.Resolver
 	audioCtrl *audio.Controller
+	station   *station.StationPlayer
+
+	// settingsWindow is the reusable popup editor. Created lazily on first use
+	// and hidden (not destroyed) on close, so reopening is cheap.
+	settingsWindow *application.WebviewWindow
 
 	// hover-watcher state
 	editorOpen  bool
@@ -68,8 +87,12 @@ func NewApp() *App {
 	res := radio.New()
 	app := &App{cfg: cfg, radio: res}
 
-	ctrl, err := audio.NewController(res, func(ev audio.Event) {
-		if app.app != nil {
+	ctrl, err := audio.NewController(radioResolverAdapter{res}, func(ev audio.Event) {
+		// Route every controller event through the station player, which
+		// auto-advances/loops and then forwards (enriched) to the frontend.
+		if app.station != nil {
+			app.station.OnAudioEvent(ev)
+		} else if app.app != nil {
 			app.app.Event.Emit("radio:state", ev)
 		}
 	})
@@ -77,6 +100,12 @@ func NewApp() *App {
 		log.Printf("[audio] Failed to initialize native audio controller: %v", err)
 	} else {
 		app.audioCtrl = ctrl
+		app.station = station.New(ctrl, res, func(ev audio.Event) {
+			if app.app != nil {
+				app.app.Event.Emit("radio:state", ev)
+			}
+		})
+		app.station.SetStations(cfg.Stations)
 	}
 
 	return app
@@ -330,6 +359,18 @@ func (a *App) applyClickThrough() {
 	platform.SetClickThrough(a.hwnd, a.cfg.ClickThrough || autoHide)
 }
 
+// reveal surfaces the bar, called when the user launches a second instance (which
+// exits immediately under single-instance mode). If the bar was auto-hidden /
+// collapsed it slides back on screen; when pinned and already visible it's a
+// no-op. Guarded on hwnd so it does nothing if the first instance is still
+// mid-startup.
+func (a *App) reveal() {
+	if a.hwnd == 0 {
+		return
+	}
+	a.setBarExpanded(true)
+}
+
 func (a *App) shutdown() {
 	platform.PushdownDisable()
 	if a.hwnd != 0 {
@@ -371,8 +412,44 @@ func (a *App) ToggleStartup() {
 	}
 }
 
-func (a *App) ConfigureAccounts() {
-	a.app.Event.Emit("show:accounts-editor")
+func (a *App) ConfigureAccounts()  { a.openSettings("accounts") }
+func (a *App) ConfigureTerminals() { a.openSettings("terminals") }
+func (a *App) ConfigureStations()  { a.openSettings("stations") }
+
+// openSettings shows the reusable settings popup focused on the given panel
+// ("accounts", "terminals", or "stations"). The window is its own frameless
+// WebviewWindow (the bar itself is only BarHeight tall, with no room for a
+// modal). It is created lazily and hidden — not destroyed — on close, so
+// reopening preserves page state and is cheap.
+//
+// The target panel is delivered two ways for robustness: encoded in the URL on
+// first creation (the page can't have registered an event listener yet), and
+// re-sent via the "settings:show" event for every subsequent open / panel
+// switch on the already-loaded page.
+func (a *App) openSettings(panel string) {
+	if a.app == nil {
+		return
+	}
+	if a.settingsWindow == nil {
+		a.settingsWindow = a.app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:             "settings",
+			Title:            "Claude Panel",
+			Width:            560,
+			Height:           420,
+			MinWidth:         420,
+			MinHeight:        260,
+			Frameless:        true,
+			AlwaysOnTop:      true,
+			DisableResize:    true,
+			Hidden:           true,
+			BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
+			URL:              "/settings.html?panel=" + panel,
+		})
+	}
+	a.settingsWindow.Show()
+	a.settingsWindow.Center()
+	a.settingsWindow.Focus()
+	a.app.Event.Emit("settings:show", panel)
 }
 
 func (a *App) Quit() {
@@ -417,6 +494,9 @@ func (a *App) SaveConfig(cfg config.Config) error {
 	a.cfg = &cfg
 	if err := config.Save(a.cfg); err != nil {
 		return err
+	}
+	if a.station != nil {
+		a.station.SetStations(cfg.Stations)
 	}
 	if a.hwnd != 0 {
 		if cfg.Monitor != prevMonitor || cfg.AppBarMode != prevAppBar {
@@ -506,25 +586,48 @@ func (a *App) GetVersion() string {
 	return Version
 }
 
-func (a *App) RadioPlay(videoID string) error {
-	if a.audioCtrl == nil {
+// RadioPlayStation starts (or resumes) the configured station at index. The
+// station player owns the queue, shuffle, auto-advance and looping; it drives
+// the single-track audio controller one track at a time.
+func (a *App) RadioPlayStation(index int) error {
+	if a.station == nil {
 		return fmt.Errorf("audio controller not initialized")
 	}
-	return a.audioCtrl.PlayVideo(a.app.Context(), videoID)
+	return a.station.Play(index)
+}
+
+// ParseStationItem classifies a single URL/ID into a StationItem for the
+// stations editor (so URL parsing stays authoritative on the Go side).
+func (a *App) ParseStationItem(input string) (config.StationItem, error) {
+	return station.ParseItem(input)
+}
+
+// SetActiveStation persists which station is selected in the bar cycler. It
+// does not start playback (use RadioPlayStation for that).
+func (a *App) SetActiveStation(index int) error {
+	if index < 0 || index >= len(a.cfg.Stations) {
+		return fmt.Errorf("station index %d out of range", index)
+	}
+	a.cfg.ActiveStation = index
+	return config.Save(a.cfg)
 }
 
 func (a *App) RadioPause() error {
-	if a.audioCtrl == nil {
+	if a.station == nil {
 		return fmt.Errorf("audio controller not initialized")
 	}
-	return a.audioCtrl.Pause()
+	return a.station.Pause()
 }
 
 func (a *App) RadioSetVolume(v float64) error {
-	if a.audioCtrl == nil {
+	if a.station == nil {
 		return fmt.Errorf("audio controller not initialized")
 	}
-	return a.audioCtrl.SetVolume(v)
+	// Persist the chosen volume so it survives restarts (replaces the prior
+	// localStorage-only value).
+	a.cfg.RadioVolume = v
+	_ = config.Save(a.cfg)
+	return a.station.SetVolume(v)
 }
 
 func (a *App) SetPinned(pinned bool) error {
@@ -576,4 +679,55 @@ func (a *App) SetEditorOpen(open bool) {
 // GetPushdownStats returns active diagnostics for macOS window pushdown.
 func (a *App) GetPushdownStats() platform.PushdownStats {
 	return platform.GetPushdownStats()
+}
+
+// OpenTerminal launches the configured launcher entry at index in a new,
+// visible terminal window. The launcher program is resolved lazily on first
+// use (no terminal detection happens in config.Defaults) and persisted.
+func (a *App) OpenTerminal(index int) error {
+	if index < 0 || index >= len(a.cfg.Terminals) {
+		return fmt.Errorf("terminal index %d out of range", index)
+	}
+	if a.cfg.Launcher.Preset == "" {
+		a.cfg.Launcher = terminal.DetectDefault()
+		if err := config.Save(a.cfg); err != nil {
+			log.Printf("[terminal] failed to persist detected launcher: %v", err)
+		} else {
+			log.Printf("[terminal] detected launcher preset %q", a.cfg.Launcher.Preset)
+		}
+	}
+	entry := a.cfg.Terminals[index]
+	if err := terminal.Launch(entry, a.cfg.Launcher); err != nil {
+		log.Printf("[terminal] open %q via %s failed: %v", entry.Name, a.cfg.Launcher.Preset, err)
+		return fmt.Errorf("failed to open terminal: %w", err)
+	}
+	log.Printf("[terminal] opened %q via %s", entry.Name, a.cfg.Launcher.Preset)
+	return nil
+}
+
+// ListTerminalPresets returns the builtin terminal programs for this OS plus
+// the custom escape hatch, for the bar editor's dropdown.
+func (a *App) ListTerminalPresets() []terminal.PresetInfo {
+	return terminal.Presets()
+}
+
+// DetectTerminal returns the auto-detected launcher for this machine without
+// persisting it — used by the editor to preselect a sensible default.
+func (a *App) DetectTerminal() config.LauncherConfig {
+	return terminal.DetectDefault()
+}
+
+// PickDirectory opens a native folder-picker and returns the chosen absolute
+// path, or "" if the user cancelled. The terminal editor uses this for the DIR
+// field — a browser file input can't yield a real OS path in WebView2.
+func (a *App) PickDirectory() (string, error) {
+	dlg := a.app.Dialog.OpenFile().
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		CanCreateDirectories(true).
+		SetTitle("Select a directory")
+	if a.window != nil {
+		dlg.AttachToWindow(a.window)
+	}
+	return dlg.PromptForSingleSelection()
 }

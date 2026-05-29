@@ -6,8 +6,15 @@ import (
 	"sync"
 )
 
+// ResolvedTrack mirrors radio.ResolvedTrack so the audio package stays free of
+// a dependency on the radio package (which imports kkdai/youtube).
+type ResolvedTrack struct {
+	URL    string
+	IsLive bool
+}
+
 type StreamResolver interface {
-	StreamURL(ctx context.Context, videoID string, forceRefresh bool) (string, error)
+	Resolve(ctx context.Context, videoID string, forceRefresh bool) (ResolvedTrack, error)
 }
 
 type Controller struct {
@@ -18,6 +25,7 @@ type Controller struct {
 	activeVideoID string
 	activeURL     string
 	currentState  State
+	curIsLive     bool
 	retried       bool
 }
 
@@ -45,28 +53,29 @@ func (c *Controller) handlePlayerEvent(ev Event) {
 		if !c.retried && c.activeVideoID != "" {
 			c.retried = true
 			log.Printf("[audio] Player encountered error: %s. Attempting once-off stream URL refresh...", ev.Err)
-			
+
 			// Retrying asynchronously
 			go func(videoID string) {
-				freshURL, err := c.resolver.StreamURL(context.Background(), videoID, true)
+				fresh, err := c.resolver.Resolve(context.Background(), videoID, true)
 				if err != nil {
 					log.Printf("[audio] Refresh resolve failed on retry: %v", err)
 					c.emit(Event{State: StateError, VideoID: videoID, Err: err.Error()})
 					return
 				}
-				
+
 				c.mu.Lock()
 				if c.activeVideoID != videoID {
 					c.mu.Unlock()
 					return // target video changed in the meantime
 				}
-				c.activeURL = freshURL
+				c.activeURL = fresh.URL
+				c.curIsLive = fresh.IsLive
 				player := c.player
 				c.mu.Unlock()
 
 				if player != nil {
-					log.Printf("[audio] Replaying refreshed URL: %s", freshURL)
-					if err := player.Play(freshURL); err != nil {
+					log.Printf("[audio] Replaying refreshed URL: %s", fresh.URL)
+					if err := player.Play(fresh.URL); err != nil {
 						log.Printf("[audio] Retry play failed: %v", err)
 						c.emit(Event{State: StateError, VideoID: videoID, Err: err.Error()})
 					}
@@ -108,16 +117,17 @@ func (c *Controller) PlayVideo(ctx context.Context, videoID string) error {
 	c.emit(Event{State: StateLoading, VideoID: videoID})
 
 	log.Printf("[audio] Resolving stream URL for video %s...", videoID)
-	url, err := c.resolver.StreamURL(ctx, videoID, false)
+	track, err := c.resolver.Resolve(ctx, videoID, false)
 	if err != nil {
-		log.Printf("[audio] StreamURL resolve failed: %v", err)
+		log.Printf("[audio] Resolve failed: %v", err)
 		c.emit(Event{State: StateError, VideoID: videoID, Err: err.Error()})
 		return err
 	}
 
-	log.Printf("[audio] Resolved URL: %s. Handing over to native player...", url)
-	c.activeURL = url
-	if err := c.player.Play(url); err != nil {
+	log.Printf("[audio] Resolved URL (live=%v): %s. Handing over to native player...", track.IsLive, track.URL)
+	c.activeURL = track.URL
+	c.curIsLive = track.IsLive
+	if err := c.player.Play(track.URL); err != nil {
 		log.Printf("[audio] Player.Play failed: %v", err)
 		c.emit(Event{State: StateError, VideoID: videoID, Err: err.Error()})
 		return err
@@ -131,6 +141,13 @@ func (c *Controller) Pause() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.player.Pause()
+}
+
+func (c *Controller) Stop() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.activeVideoID = ""
+	return c.player.Stop()
 }
 
 func (c *Controller) SetVolume(v float64) error {

@@ -17,19 +17,68 @@ type HotkeyConfig struct {
 	ToggleClickThrough string `json:"toggleClickThrough"`
 }
 
+// TerminalConfig is one launcher entry shown in the bar's terminal cycler.
+type TerminalConfig struct {
+	Name    string `json:"name"`
+	Color   string `json:"color"`             // "#RRGGBB"; "" = none
+	Dir     string `json:"dir"`               // "~" allowed
+	Command string `json:"command,omitempty"` // default "claude"
+}
+
+// StationItemKind classifies one entry in a radio station's collection. It is a
+// hint from URL parsing; the resolver is authoritative on live-vs-VOD (a
+// watch?v= with a non-empty HLS manifest is treated as a livestream).
+type StationItemKind string
+
+const (
+	ItemVideo      StationItemKind = "video"
+	ItemPlaylist   StationItemKind = "playlist"
+	ItemLivestream StationItemKind = "livestream"
+)
+
+// StationItem is one YouTube source in a station: a single video/livestream
+// (ID is the 11-char video id) or a playlist (ID is the list id).
+type StationItem struct {
+	Kind StationItemKind `json:"kind"`
+	ID   string          `json:"id"`
+	Raw  string          `json:"raw,omitempty"` // original user input, for the editor
+}
+
+// StationConfig is a named, ordered collection of YouTube items played as a
+// radio station, with a per-station shuffle toggle.
+type StationConfig struct {
+	Name    string        `json:"name"`
+	Items   []StationItem `json:"items"`
+	Shuffle bool          `json:"shuffle"`
+}
+
+// LauncherConfig is the single, global choice of terminal program used to open
+// every launcher entry. Preset == "" means "not yet resolved" — OpenTerminal
+// detects a sensible default lazily on first use and persists it here.
+type LauncherConfig struct {
+	Preset string   `json:"preset"`         // "windows-terminal", …, "custom"; "" = detect lazily
+	Exe    string   `json:"exe,omitempty"`  // override (custom / edited builtin)
+	Args   []string `json:"args,omitempty"` // override template
+}
+
 type Config struct {
-	Monitor          int             `json:"monitor"`
-	Theme            string          `json:"theme"`
-	Opacity          float64         `json:"opacity"`
-	RefreshSeconds   int             `json:"refreshSeconds"`
-	BarHeight        int             `json:"barHeight"`
-	ActiveAccount    int             `json:"activeAccount"`
-	Accounts         []AccountConfig `json:"accounts"`
-	Hotkeys          HotkeyConfig    `json:"hotkeys"`
-	StartWithWindows bool            `json:"startWithWindows"`
-	ClickThrough     bool            `json:"clickThrough"`
-	AppBarMode       bool            `json:"appBarMode"` // push apps down (AppBar API)
-	Pinned           bool            `json:"pinned"`     // false = auto-hide on mouseleave, undocked
+	Monitor          int              `json:"monitor"`
+	Theme            string           `json:"theme"`
+	Opacity          float64          `json:"opacity"`
+	RefreshSeconds   int              `json:"refreshSeconds"`
+	BarHeight        int              `json:"barHeight"`
+	ActiveAccount    int              `json:"activeAccount"`
+	Accounts         []AccountConfig  `json:"accounts"`
+	Hotkeys          HotkeyConfig     `json:"hotkeys"`
+	StartWithWindows bool             `json:"startWithWindows"`
+	ClickThrough     bool             `json:"clickThrough"`
+	AppBarMode       bool             `json:"appBarMode"` // push apps down (AppBar API)
+	Pinned           bool             `json:"pinned"`     // false = auto-hide on mouseleave, undocked
+	Terminals        []TerminalConfig `json:"terminals"`
+	Launcher         LauncherConfig   `json:"launcher"`
+	Stations         []StationConfig  `json:"stations"`
+	ActiveStation    int              `json:"activeStation"`
+	RadioVolume      float64          `json:"radioVolume"` // 0..1, persisted
 }
 
 func AppDataDir() string {
@@ -63,13 +112,13 @@ func Defaults() Config {
 		home = ""
 	}
 	return Config{
-		Monitor:         0,
-		Theme:           "terminal-green",
-		Opacity:         0.92,
-		RefreshSeconds:  15,
-		BarHeight:       28,
-		ActiveAccount:   0,
-		AppBarMode:      true,
+		Monitor:        0,
+		Theme:          "terminal-green",
+		Opacity:        0.92,
+		RefreshSeconds: 15,
+		BarHeight:      28,
+		ActiveAccount:  0,
+		AppBarMode:     true,
 		Accounts: []AccountConfig{
 			{Name: "main", Path: filepath.Join(home, ".claude")},
 		},
@@ -80,6 +129,15 @@ func Defaults() Config {
 		StartWithWindows: false,
 		ClickThrough:     false,
 		Pinned:           true,
+		// The two original hardcoded stations, migrated as defaults. Both are
+		// livestreams, so they never reach end-of-track and loop forever —
+		// preserving the pre-collections behavior byte-for-byte.
+		Stations: []StationConfig{
+			{Name: "CLAUDE FM", Items: []StationItem{{Kind: ItemLivestream, ID: "YmQ7jRgf4f0"}}},
+			{Name: "LOFI GIRL", Items: []StationItem{{Kind: ItemLivestream, ID: "EWrX250Zhko"}}},
+		},
+		ActiveStation: 0,
+		RadioVolume:   1.0,
 	}
 }
 

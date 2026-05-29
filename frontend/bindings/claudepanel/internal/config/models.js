@@ -133,6 +133,42 @@ export class Config {
              */
             this["pinned"] = false;
         }
+        if (!("terminals" in $$source)) {
+            /**
+             * @member
+             * @type {TerminalConfig[]}
+             */
+            this["terminals"] = [];
+        }
+        if (!("launcher" in $$source)) {
+            /**
+             * @member
+             * @type {LauncherConfig}
+             */
+            this["launcher"] = (new LauncherConfig());
+        }
+        if (!("stations" in $$source)) {
+            /**
+             * @member
+             * @type {StationConfig[]}
+             */
+            this["stations"] = [];
+        }
+        if (!("activeStation" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["activeStation"] = 0;
+        }
+        if (!("radioVolume" in $$source)) {
+            /**
+             * 0..1, persisted
+             * @member
+             * @type {number}
+             */
+            this["radioVolume"] = 0;
+        }
 
         Object.assign(this, $$source);
     }
@@ -145,12 +181,24 @@ export class Config {
     static createFrom($$source = {}) {
         const $$createField6_0 = $$createType1;
         const $$createField7_0 = $$createType2;
+        const $$createField12_0 = $$createType4;
+        const $$createField13_0 = $$createType5;
+        const $$createField14_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("accounts" in $$parsedSource) {
             $$parsedSource["accounts"] = $$createField6_0($$parsedSource["accounts"]);
         }
         if ("hotkeys" in $$parsedSource) {
             $$parsedSource["hotkeys"] = $$createField7_0($$parsedSource["hotkeys"]);
+        }
+        if ("terminals" in $$parsedSource) {
+            $$parsedSource["terminals"] = $$createField12_0($$parsedSource["terminals"]);
+        }
+        if ("launcher" in $$parsedSource) {
+            $$parsedSource["launcher"] = $$createField13_0($$parsedSource["launcher"]);
+        }
+        if ("stations" in $$parsedSource) {
+            $$parsedSource["stations"] = $$createField14_0($$parsedSource["stations"]);
         }
         return new Config(/** @type {Partial<Config>} */($$parsedSource));
     }
@@ -191,7 +239,239 @@ export class HotkeyConfig {
     }
 }
 
+/**
+ * LauncherConfig is the single, global choice of terminal program used to open
+ * every launcher entry. Preset == "" means "not yet resolved" — OpenTerminal
+ * detects a sensible default lazily on first use and persists it here.
+ */
+export class LauncherConfig {
+    /**
+     * Creates a new LauncherConfig instance.
+     * @param {Partial<LauncherConfig>} [$$source = {}] - The source object to create the LauncherConfig.
+     */
+    constructor($$source = {}) {
+        if (!("preset" in $$source)) {
+            /**
+             * "windows-terminal", …, "custom"; "" = detect lazily
+             * @member
+             * @type {string}
+             */
+            this["preset"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * override (custom / edited builtin)
+             * @member
+             * @type {string | undefined}
+             */
+            this["exe"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * override template
+             * @member
+             * @type {string[] | undefined}
+             */
+            this["args"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LauncherConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {LauncherConfig}
+     */
+    static createFrom($$source = {}) {
+        const $$createField2_0 = $$createType8;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("args" in $$parsedSource) {
+            $$parsedSource["args"] = $$createField2_0($$parsedSource["args"]);
+        }
+        return new LauncherConfig(/** @type {Partial<LauncherConfig>} */($$parsedSource));
+    }
+}
+
+/**
+ * StationConfig is a named, ordered collection of YouTube items played as a
+ * radio station, with a per-station shuffle toggle.
+ */
+export class StationConfig {
+    /**
+     * Creates a new StationConfig instance.
+     * @param {Partial<StationConfig>} [$$source = {}] - The source object to create the StationConfig.
+     */
+    constructor($$source = {}) {
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("items" in $$source)) {
+            /**
+             * @member
+             * @type {StationItem[]}
+             */
+            this["items"] = [];
+        }
+        if (!("shuffle" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["shuffle"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new StationConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {StationConfig}
+     */
+    static createFrom($$source = {}) {
+        const $$createField1_0 = $$createType10;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField1_0($$parsedSource["items"]);
+        }
+        return new StationConfig(/** @type {Partial<StationConfig>} */($$parsedSource));
+    }
+}
+
+/**
+ * StationItem is one YouTube source in a station: a single video/livestream
+ * (ID is the 11-char video id) or a playlist (ID is the list id).
+ */
+export class StationItem {
+    /**
+     * Creates a new StationItem instance.
+     * @param {Partial<StationItem>} [$$source = {}] - The source object to create the StationItem.
+     */
+    constructor($$source = {}) {
+        if (!("kind" in $$source)) {
+            /**
+             * @member
+             * @type {StationItemKind}
+             */
+            this["kind"] = StationItemKind.$zero;
+        }
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * original user input, for the editor
+             * @member
+             * @type {string | undefined}
+             */
+            this["raw"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new StationItem instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {StationItem}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new StationItem(/** @type {Partial<StationItem>} */($$parsedSource));
+    }
+}
+
+/**
+ * StationItemKind classifies one entry in a radio station's collection. It is a
+ * hint from URL parsing; the resolver is authoritative on live-vs-VOD (a
+ * watch?v= with a non-empty HLS manifest is treated as a livestream).
+ * @readonly
+ * @enum {string}
+ */
+export const StationItemKind = {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero: "",
+
+    ItemVideo: "video",
+    ItemPlaylist: "playlist",
+    ItemLivestream: "livestream",
+};
+
+/**
+ * TerminalConfig is one launcher entry shown in the bar's terminal cycler.
+ */
+export class TerminalConfig {
+    /**
+     * Creates a new TerminalConfig instance.
+     * @param {Partial<TerminalConfig>} [$$source = {}] - The source object to create the TerminalConfig.
+     */
+    constructor($$source = {}) {
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("color" in $$source)) {
+            /**
+             * "#RRGGBB"; "" = none
+             * @member
+             * @type {string}
+             */
+            this["color"] = "";
+        }
+        if (!("dir" in $$source)) {
+            /**
+             * "~" allowed
+             * @member
+             * @type {string}
+             */
+            this["dir"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * default "claude"
+             * @member
+             * @type {string | undefined}
+             */
+            this["command"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TerminalConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {TerminalConfig}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TerminalConfig(/** @type {Partial<TerminalConfig>} */($$parsedSource));
+    }
+}
+
 // Private type creation functions
 const $$createType0 = AccountConfig.createFrom;
 const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = HotkeyConfig.createFrom;
+const $$createType3 = TerminalConfig.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = LauncherConfig.createFrom;
+const $$createType6 = StationConfig.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Array($Create.Any);
+const $$createType9 = StationItem.createFrom;
+const $$createType10 = $Create.Array($$createType9);

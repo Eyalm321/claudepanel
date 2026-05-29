@@ -1,4 +1,5 @@
 //go:build linux && cgo
+
 package audio
 
 /*
@@ -173,7 +174,10 @@ func (p *LinuxPlayer) monitorBus() {
 				})
 
 			case C.GST_MESSAGE_EOS:
-				p.emit(Event{State: StateIdle})
+				// End-of-stream: the track played to its natural end. Emit
+				// StateEnded (distinct from idle/paused) so the station player
+				// can auto-advance. Livestreams never reach EOS.
+				p.emit(Event{State: StateEnded})
 
 			case C.GST_MESSAGE_STATE_CHANGED:
 				var oldState, newState, pendingState C.GstState

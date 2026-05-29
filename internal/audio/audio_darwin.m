@@ -7,6 +7,10 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
 @property (nonatomic, assign) void* goPlayer;
 @property (nonatomic, strong) AVPlayer* player;
 @property (nonatomic, strong) AVPlayerItem* currentItem;
+// Set when the item plays to its natural end. The rate-KVO branch fires a
+// spurious rate==0 ("paused") right after EOS — this flag suppresses it so the
+// station player sees exactly one "ended" and not a trailing "paused".
+@property (nonatomic, assign) BOOL endedFired;
 @end
 
 @implementation DarwinPlayerObserver
@@ -32,11 +36,21 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
     } else if ([keyPath isEqualToString:@"rate"]) {
         float rate = [[change objectForKey:NSKeyValueChangeNewKey] floatValue];
         if (rate == 0.0) {
+            // Natural end already emitted "ended"; swallow the trailing rate==0
+            // so we don't also report a (spurious) user pause.
+            if (self.endedFired) {
+                return;
+            }
             goDarwinPlayerCallback(_goPlayer, "paused", NULL);
         } else {
             goDarwinPlayerCallback(_goPlayer, "playing", NULL);
         }
     }
+}
+
+- (void)itemDidPlayToEnd:(NSNotification*)notification {
+    self.endedFired = YES;
+    goDarwinPlayerCallback(_goPlayer, "ended", NULL);
 }
 
 - (void)itemFailedToPlay:(NSNotification*)notification {
@@ -51,6 +65,7 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
             [self.currentItem removeObserver:self forKeyPath:@"status"];
         } @catch (NSException *exception) {}
         [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemFailedToPlayToEndTimeNotification object:self.currentItem];
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:self.currentItem];
         self.currentItem = nil;
     }
     if (self.player) {
@@ -65,11 +80,13 @@ void goDarwinPlayerCallback(void* goPlayer, const char* state, const char* errSt
     [self stopObserving];
     self.player = player;
     self.currentItem = item;
-    
+    self.endedFired = NO;
+
     [self.player addObserver:self forKeyPath:@"rate" options:NSKeyValueObservingOptionNew context:nil];
     [self.currentItem addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
-    
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(itemFailedToPlay:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:self.currentItem];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(itemDidPlayToEnd:) name:AVPlayerItemDidPlayToEndTimeNotification object:self.currentItem];
 }
 
 - (void)dealloc {

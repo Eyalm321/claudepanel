@@ -1,4 +1,5 @@
 //go:build windows
+
 package audio
 
 import (
@@ -62,10 +63,11 @@ func TestRealWinRT_MediaPlayer(t *testing.T) {
 	resolver := radio.New()
 	videoID := "EWrX250Zhko" // Synthwave Radio live stream
 	log.Printf("Resolving YouTube stream URL for video %s...", videoID)
-	hlsURL, err := resolver.StreamURL(context.Background(), videoID, false)
+	track, err := resolver.Resolve(context.Background(), videoID, false)
 	if err != nil {
 		t.Fatalf("Failed to resolve stream URL: %v", err)
 	}
+	hlsURL := track.URL
 	log.Printf("Resolved YouTube URL: %s", hlsURL)
 
 	// 2. Run PowerShell with WinRT MediaPlayer in background

@@ -15,6 +15,9 @@ import * as config$0 from "./internal/config/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as platform$0 from "./internal/platform/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as terminal$0 from "./internal/terminal/models.js";
 
 /**
  * @returns {$CancellablePromise<void>}
@@ -24,11 +27,36 @@ export function ConfigureAccounts() {
 }
 
 /**
+ * @returns {$CancellablePromise<void>}
+ */
+export function ConfigureStations() {
+    return $Call.ByID(2270322734);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function ConfigureTerminals() {
+    return $Call.ByID(1237227572);
+}
+
+/**
+ * DetectTerminal returns the auto-detected launcher for this machine without
+ * persisting it — used by the editor to preselect a sensible default.
+ * @returns {$CancellablePromise<config$0.LauncherConfig>}
+ */
+export function DetectTerminal() {
+    return $Call.ByID(3295777970).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<claude$0.BarData | null>}
  */
 export function GetBarData() {
     return $Call.ByID(1002198872).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType2($result);
     }));
 }
 
@@ -37,7 +65,7 @@ export function GetBarData() {
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType3($result);
     }));
 }
 
@@ -46,7 +74,7 @@ export function GetConfig() {
  */
 export function GetMonitors() {
     return $Call.ByID(3692271108).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+        return $$createType5($result);
     }));
 }
 
@@ -56,7 +84,7 @@ export function GetMonitors() {
  */
 export function GetPushdownStats() {
     return $Call.ByID(2130621354).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType6($result);
     }));
 }
 
@@ -65,6 +93,50 @@ export function GetPushdownStats() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377);
+}
+
+/**
+ * ListTerminalPresets returns the builtin terminal programs for this OS plus
+ * the custom escape hatch, for the bar editor's dropdown.
+ * @returns {$CancellablePromise<terminal$0.PresetInfo[]>}
+ */
+export function ListTerminalPresets() {
+    return $Call.ByID(3249389343).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType8($result);
+    }));
+}
+
+/**
+ * OpenTerminal launches the configured launcher entry at index in a new,
+ * visible terminal window. The launcher program is resolved lazily on first
+ * use (no terminal detection happens in config.Defaults) and persisted.
+ * @param {number} index
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenTerminal(index) {
+    return $Call.ByID(2247958725, index);
+}
+
+/**
+ * ParseStationItem classifies a single URL/ID into a StationItem for the
+ * stations editor (so URL parsing stays authoritative on the Go side).
+ * @param {string} input
+ * @returns {$CancellablePromise<config$0.StationItem>}
+ */
+export function ParseStationItem(input) {
+    return $Call.ByID(1591082711, input).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType9($result);
+    }));
+}
+
+/**
+ * PickDirectory opens a native folder-picker and returns the chosen absolute
+ * path, or "" if the user cancelled. The terminal editor uses this for the DIR
+ * field — a browser file input can't yield a real OS path in WebView2.
+ * @returns {$CancellablePromise<string>}
+ */
+export function PickDirectory() {
+    return $Call.ByID(1347829059);
 }
 
 /**
@@ -82,11 +154,14 @@ export function RadioPause() {
 }
 
 /**
- * @param {string} videoID
+ * RadioPlayStation starts (or resumes) the configured station at index. The
+ * station player owns the queue, shuffle, auto-advance and looping; it drives
+ * the single-track audio controller one track at a time.
+ * @param {number} index
  * @returns {$CancellablePromise<void>}
  */
-export function RadioPlay(videoID) {
-    return $Call.ByID(469411798, videoID);
+export function RadioPlayStation(index) {
+    return $Call.ByID(1061425594, index);
 }
 
 /**
@@ -111,6 +186,16 @@ export function SaveConfig(cfg) {
  */
 export function SetActiveAccount(index) {
     return $Call.ByID(4119675500, index);
+}
+
+/**
+ * SetActiveStation persists which station is selected in the bar cycler. It
+ * does not start playback (use RadioPlayStation for that).
+ * @param {number} index
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetActiveStation(index) {
+    return $Call.ByID(3286258115, index);
 }
 
 /**
@@ -164,9 +249,13 @@ export function ToggleStartup() {
 }
 
 // Private type creation functions
-const $$createType0 = claude$0.BarData.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = config$0.Config.createFrom;
-const $$createType3 = platform$0.MonitorInfo.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = platform$0.PushdownStats.createFrom;
+const $$createType0 = config$0.LauncherConfig.createFrom;
+const $$createType1 = claude$0.BarData.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);
+const $$createType3 = config$0.Config.createFrom;
+const $$createType4 = platform$0.MonitorInfo.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = platform$0.PushdownStats.createFrom;
+const $$createType7 = terminal$0.PresetInfo.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = config$0.StationItem.createFrom;
