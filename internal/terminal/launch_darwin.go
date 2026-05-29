@@ -65,3 +65,11 @@ func DetectDefault() config.LauncherConfig {
 func detachAttrs() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{}
 }
+
+func GetPreExisting(preset string) map[uintptr]bool {
+	return nil
+}
+
+func PostLaunch(preset string, entry config.TerminalConfig, title string, preExisting map[uintptr]bool) {}
+
+

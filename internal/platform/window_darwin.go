@@ -193,6 +193,8 @@ func GetCursorPos() (int, int) {
 // ResetDwmFrame is a Windows-only concept; no-op elsewhere.
 func ResetDwmFrame(hwnd uintptr) {}
 
+
+
 func HideWindow(hwnd uintptr) {
 	C.platformHideWindow(unsafe.Pointer(hwnd))
 }

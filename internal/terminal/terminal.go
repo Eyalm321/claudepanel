@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"claudepanel/internal/config"
@@ -87,6 +88,7 @@ const (
 // covers keys from every OS so the table is stable regardless of build target.
 var presetLabels = map[string]string{
 	"windows-terminal":    "Windows Terminal",
+	"hyper":               "Hyper",
 	"powershell":          "PowerShell",
 	"cmd":                 "Command Prompt",
 	"terminal-app":        "Terminal.app",
@@ -94,7 +96,6 @@ var presetLabels = map[string]string{
 	"ghostty":             "Ghostty",
 	"gnome-terminal":      "GNOME Terminal",
 	"konsole":             "Konsole",
-	"alacritty":           "Alacritty",
 	"wezterm":             "WezTerm",
 	"kitty":               "kitty",
 	"xterm":               "xterm",
@@ -321,8 +322,89 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig, opts Lau
 // directory is set when the configured dir exists, which also gives the `cmd`
 // preset its working directory without fragile cmd.exe quoting.
 func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts LaunchOpts) error {
+	preExisting := GetPreExisting(launcher.Preset)
+
+	var hyperConfigRestore func()
+	if runtime.GOOS == "windows" && launcher.Preset == "hyper" {
+		hyperConfigDir := filepath.Join(os.Getenv("APPDATA"), "Hyper")
+		configPath := filepath.Join(hyperConfigDir, ".hyper.js")
+		backupPath := configPath + ".bak"
+
+		if _, err := os.Stat(configPath); err == nil {
+			if err := copyFile(configPath, backupPath); err == nil {
+				contentBytes, err := os.ReadFile(configPath)
+				if err == nil {
+					content := string(contentBytes)
+
+					title := displayLabel(entry, opts)
+					dot := nearestDot(strings.TrimSpace(entry.Color))
+					if dot != "" && !strings.Contains(title, dot) {
+						title = dot + " " + title
+					}
+
+					cmdStr := strings.TrimSpace(entry.Command)
+					if cmdStr == "" {
+						cmdStr = "claude"
+					}
+
+					cfgDir := expandHome(strings.TrimSpace(opts.ConfigDir))
+
+					psCmd := `$env:CLAUDE_CODE_DISABLE_TERMINAL_TITLE = '1'; `
+					if cfgDir != "" {
+						escapedCfgDir := strings.ReplaceAll(cfgDir, `'`, `''`)
+						psCmd += fmt.Sprintf(`$env:CLAUDE_CONFIG_DIR = '%s'; `, escapedCfgDir)
+					}
+					// Hyper is single-instance: the new window's shell is spawned by
+					// the already-running primary process, so cmd.Dir below is ignored
+					// and the shell inherits Hyper's own cwd (the home dir). Since we
+					// fully own this PowerShell command, cd into the configured dir
+					// explicitly. Only when it exists, so a bad path doesn't abort the
+					// `claude` that follows.
+					if dir := resolveDir(entry.Dir); dir != "" {
+						if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+							escapedDir := strings.ReplaceAll(dir, `'`, `''`)
+							psCmd += fmt.Sprintf(`Set-Location -LiteralPath '%s'; `, escapedDir)
+						}
+					}
+					escapedTitle := strings.ReplaceAll(title, `'`, `''`)
+					psCmd += fmt.Sprintf(`$host.UI.RawUI.WindowTitle = '%s'; `, escapedTitle)
+					psCmd += cmdStr
+
+					targetShell := "shell: 'powershell.exe',"
+					// psCmd is embedded in a JS double-quoted string literal in
+					// .hyper.js, so escape backslashes FIRST then double-quotes.
+					// Without the backslash escaping, Hyper's JS parser collapses
+					// the Windows path "C:\Users\Admin\.claude-alt" to
+					// "C:UsersAdmin.claude-alt" (it drops the unknown \U \A \.
+					// escapes), so CLAUDE_CONFIG_DIR points nowhere and `claude`
+					// falls back to the default profile and prompts for login.
+					escapedPsCmd := strings.ReplaceAll(psCmd, `\`, `\\`)
+					escapedPsCmd = strings.ReplaceAll(escapedPsCmd, `"`, `\"`)
+					targetArgs := fmt.Sprintf(`shellArgs: ['-NoExit', '-Command', "%s"],`, escapedPsCmd)
+
+					content = strings.Replace(content, "shell: '',", targetShell, 1)
+					content = strings.Replace(content, `shell: "",`, targetShell, 1)
+					content = strings.Replace(content, "shellArgs: [],", targetArgs, 1)
+					content = strings.Replace(content, `shellArgs: [],`, targetArgs, 1)
+
+					if err := os.WriteFile(configPath, []byte(content), 0644); err == nil {
+						hyperConfigRestore = func() {
+							if _, err := os.Stat(backupPath); err == nil {
+								_ = copyFile(backupPath, configPath)
+								_ = os.Remove(backupPath)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	exe, args, err := build(entry, launcher, opts)
 	if err != nil {
+		if hyperConfigRestore != nil {
+			hyperConfigRestore()
+		}
 		return err
 	}
 	cmd := exec.Command(exe, args...)
@@ -331,18 +413,27 @@ func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts La
 			cmd.Dir = dir
 		}
 	}
-	// Also set CLAUDE_CONFIG_DIR in the process environment. Directly-spawned
-	// shells (powershell.exe, cmd.exe) inherit it, and it's the only channel for
-	// the custom preset (whose template we don't wrap in a known shell). Builtin
-	// shell presets additionally get it injected into the command (see build).
 	if cfgDir := expandHome(strings.TrimSpace(opts.ConfigDir)); cfgDir != "" {
 		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+cfgDir)
 	}
 	cmd.SysProcAttr = detachAttrs()
 	if err := cmd.Start(); err != nil {
+		if hyperConfigRestore != nil {
+			hyperConfigRestore()
+		}
 		return fmt.Errorf("launch %s: %w", exe, err)
 	}
-	// Detach: the terminal is the user's; we don't reap it.
+
+	if hyperConfigRestore != nil {
+		go func() {
+			time.Sleep(4 * time.Second)
+			hyperConfigRestore()
+		}()
+	}
+
+	title := displayLabel(entry, opts)
+	PostLaunch(launcher.Preset, entry, title, preExisting)
+
 	return cmd.Process.Release()
 }
 
@@ -473,4 +564,12 @@ func parseByte(s string) (int, bool) {
 		}
 	}
 	return v, false
+}
+
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
 }

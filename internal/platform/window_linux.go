@@ -165,6 +165,8 @@ func GetCursorPos() (int, int) { return -1, -1 }
 // ResetDwmFrame is a Windows-only concept; no-op elsewhere.
 func ResetDwmFrame(hwnd uintptr) {}
 
+
+
 // HideWindow / ShowWindow no-op on Linux for now (auto-hide is Windows-only v1).
 func HideWindow(hwnd uintptr) {}
 func ShowWindow(hwnd uintptr) {}

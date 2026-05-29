@@ -18,7 +18,6 @@ var (
 	procEnumWindows                = user32.NewProc("EnumWindows")
 	procGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible            = user32.NewProc("IsWindowVisible")
-	procGetWindowTextW             = user32.NewProc("GetWindowTextW")
 	procGetCursorPos               = user32.NewProc("GetCursorPos")
 	procShowWindow                 = user32.NewProc("ShowWindow")
 	procSetWindowRgn               = user32.NewProc("SetWindowRgn")
@@ -85,14 +84,21 @@ type appBarData struct {
 }
 
 func FindWindowByPID() (uintptr, error) {
-	pid := uint32(os.Getpid())
+	if found := findVisibleWindowByPID(uint32(os.Getpid())); found != 0 {
+		return found, nil
+	}
+	return 0, fmt.Errorf("window not found for PID %d", os.Getpid())
+}
+
+// findVisibleWindowByPID returns the first visible top-level window owned by pid,
+// or 0 if none.
+func findVisibleWindowByPID(pid uint32) uintptr {
 	var found uintptr
 	cb := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
 		var wPid uint32
 		procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&wPid)))
 		if wPid == pid {
-			vis, _, _ := procIsWindowVisible.Call(hwnd)
-			if vis != 0 {
+			if vis, _, _ := procIsWindowVisible.Call(hwnd); vis != 0 {
 				found = hwnd
 				return 0
 			}
@@ -100,11 +106,9 @@ func FindWindowByPID() (uintptr, error) {
 		return 1
 	})
 	procEnumWindows.Call(cb, 0)
-	if found == 0 {
-		return 0, fmt.Errorf("window not found for PID %d", pid)
-	}
-	return found, nil
+	return found
 }
+
 
 func ApplyBarStyles(hwnd uintptr) {
 	style, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlStyle)

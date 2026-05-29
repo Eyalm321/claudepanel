@@ -3,59 +3,172 @@
 package terminal
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
+	"unsafe"
 
 	"claudepanel/internal/config"
 )
 
+var (
+	user32                         = syscall.NewLazyDLL("user32.dll")
+	procEnumWindows                = user32.NewProc("EnumWindows")
+	procIsWindowVisible            = user32.NewProc("IsWindowVisible")
+	procGetWindowTextW             = user32.NewProc("GetWindowTextW")
+	procGetClassNameW              = user32.NewProc("GetClassNameW")
+	procIsWindow                   = user32.NewProc("IsWindow")
+	procSetWindowTextW             = user32.NewProc("SetWindowTextW")
+	procShowWindow                 = user32.NewProc("ShowWindow")
+	procSetWindowPos               = user32.NewProc("SetWindowPos")
+	procGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
+
+	kernel32                       = syscall.NewLazyDLL("kernel32.dll")
+	procOpenProcess                = kernel32.NewProc("OpenProcess")
+	procCloseHandle                = kernel32.NewProc("CloseHandle")
+	procQueryFullProcessImageNameW = kernel32.NewProc("QueryFullProcessImageNameW")
+
+	dwmapi                    = syscall.NewLazyDLL("dwmapi.dll")
+	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
+)
+
+const (
+	dwmwaBorderColor = uintptr(34)
+	swRestore        = 9
+	swpNoMove        = 0x0002
+	swpNoZOrder      = 0x0004
+)
+
+func getWindowText(hwnd uintptr) string {
+	var buf [512]uint16
+	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf[:])
+}
+
+func getClassName(hwnd uintptr) string {
+	var buf [256]uint16
+	procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf[:])
+}
+
+// getWindowProcessName queries the executable filename of the process owning the window handle.
+func getWindowProcessName(hwnd uintptr) string {
+	var pid uint32
+	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid == 0 {
+		return ""
+	}
+
+	// PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+	hProcess, _, _ := procOpenProcess.Call(0x1000, 0, uintptr(pid))
+	if hProcess == 0 {
+		return ""
+	}
+	defer procCloseHandle.Call(hProcess)
+
+	var buf [1024]uint16
+	size := uint32(len(buf))
+	res, _, _ := procQueryFullProcessImageNameW.Call(hProcess, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)))
+	if res == 0 {
+		return ""
+	}
+
+	path := syscall.UTF16ToString(buf[:size])
+	return filepath.Base(path)
+}
+
+// getActiveHyperWindows returns a map of all currently visible Hyper window handles.
+func getActiveHyperWindows() map[uintptr]bool {
+	active := make(map[uintptr]bool)
+	cb := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
+		if vis, _, _ := procIsWindowVisible.Call(hwnd); vis != 0 {
+			exeName := getWindowProcessName(hwnd)
+			if strings.EqualFold(exeName, "Hyper.exe") {
+				active[hwnd] = true
+			}
+		}
+		return 1 // Continue enumerating
+	})
+	procEnumWindows.Call(cb, 0)
+	return active
+}
+
+// GetPreExisting returns pre-existing Hyper windows.
+func GetPreExisting(preset string) map[uintptr]bool {
+	if preset == "hyper" {
+		return getActiveHyperWindows()
+	}
+	return nil
+}
+
+// findHyperWindow searches for the Hyper terminal window by matching its process name,
+// skipping any pre-existing windows.
+func findHyperWindow(entryName string, preExisting map[uintptr]bool) uintptr {
+	var found uintptr
+	cb := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
+		if vis, _, _ := procIsWindowVisible.Call(hwnd); vis != 0 {
+			if preExisting != nil && preExisting[hwnd] {
+				return 1 // Continue enumerating (skip pre-existing)
+			}
+			exeName := getWindowProcessName(hwnd)
+			if strings.EqualFold(exeName, "Hyper.exe") {
+				found = hwnd
+				return 0 // Stop enumerating
+			}
+		}
+		return 1 // Continue enumerating
+	})
+	procEnumWindows.Call(cb, 0)
+	return found
+}
+
 // builtinPresets is ordered by detection preference: Windows Terminal first,
-// then PowerShell, then Command Prompt.
+// then Hyper, then PowerShell, then Command Prompt.
 func builtinPresets() []Preset {
+	hyperExe := filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "Hyper", "Hyper.exe")
+	if _, err := os.Stat(hyperExe); err != nil {
+		hyperExe = "Hyper.exe"
+	}
+
 	return []Preset{
 		{
 			Key: "windows-terminal",
 			Exe: "wt.exe",
-			// `wt -w new new-tab --suppressApplicationTitle --title "🔵 NAME" --tabColor #hex -d DIR pwsh -NoExit -EncodedCommand <b64>`.
-			// --tabColor tints the tab via WT itself, so the color persists whether
-			// the window is focused or not (DWM per-window border doesn't: WT owns
-			// the frame and repaints it on activation). The emoji dot in the title
-			// is the cross-OS fallback. --suppressApplicationTitle pins the tab to
-			// our --title so the running program (e.g. `claude`) can't rename it.
-			// The command is a base64 -EncodedCommand because wt.exe splits its
-			// commandline on `;` (even inside quotes), which would otherwise break
-			// the "$env:CLAUDE_CONFIG_DIR=…; claude" account-scoping export.
 			PreColor:   []string{"-w", "new", "new-tab", "--suppressApplicationTitle", "--title", "{title}"},
 			ColorArgs:  []string{"--tabColor", "{color}"},
 			PostColor:  []string{"-d", "{dir}", "pwsh", "-NoExit", "-EncodedCommand", "{cmd}"},
 			DotInTitle: true,
-			// {cmd} runs in pwsh; marks the shell for env-var syntax. composeShellCmd
-			// only appends `exec` for bash/sh, so this is a no-op for keep-open (WT
-			// stays open via -NoExit).
-			Shell:     "pwsh",
-			EncodeCmd: true,
-			Quote:     quoteNone,
+			Shell:      "pwsh",
+			EncodeCmd:  true,
+			Quote:      quoteNone,
+		},
+		{
+			Key: "hyper",
+			Exe: hyperExe,
+			// Custom post-launch helper handles the launching Command execution, DWM styling and title locking
+			PreColor:   []string{},
+			DotInTitle: true,
+			Shell:      "pwsh",
+			Quote:      quoteNone,
 		},
 		{
 			Key: "powershell",
 			Exe: "powershell",
-			// Launched directly (no cmd.exe): a console subsystem child of our
-			// GUI process gets its own visible console window. The title is set
-			// from inside the session; -NoExit keeps it open.
 			PreColor: []string{"-NoExit", "-Command",
 				"$host.UI.RawUI.WindowTitle = {title}; Set-Location -LiteralPath {dir}; {cmd}"},
 			DotInTitle: true,
-			Shell:      "pwsh", // keep-open via -NoExit, not by appending exec
+			Shell:      "pwsh",
 			Quote:      quotePwsh,
 		},
 		{
 			Key: "cmd",
 			Exe: "cmd.exe",
-			// `cmd /k "title 🔵 NAME&CMD"`. The working dir is set via cmd.Dir
-			// in Launch, which sidesteps cmd.exe's brittle quoting of `cd /d`.
 			PreColor:   []string{"/k", "title {title}&{cmd}"},
 			DotInTitle: true,
-			Shell:      "cmd", // keep-open via /k
+			Shell:      "cmd",
 			Quote:      quoteNone,
 		},
 	}
@@ -68,14 +181,80 @@ func DetectDefault() config.LauncherConfig {
 			return config.LauncherConfig{Preset: p.Key}
 		}
 	}
-	// powershell.exe ships with every Windows install — a safe last resort.
 	return config.LauncherConfig{Preset: "powershell"}
 }
 
 // detachAttrs is the deliberate inverse of internal/audio's hidden helper: NO
-// HideWindow / CREATE_NO_WINDOW (that would hide the very console the user
-// wants). CREATE_NEW_PROCESS_GROUP detaches Ctrl-C handling so closing
-// ClaudePanel doesn't signal the terminal.
+// HideWindow / CREATE_NO_WINDOW. CREATE_NEW_PROCESS_GROUP detaches Ctrl-C.
 func detachAttrs() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: 0x00000200} // CREATE_NEW_PROCESS_GROUP
+}
+
+// PostLaunch handles custom window resizing, border coloring, and high-frequency title locking on Windows.
+func PostLaunch(preset string, entry config.TerminalConfig, title string, preExisting map[uintptr]bool) {
+	if preset != "hyper" {
+		return
+	}
+
+	go func() {
+		// Poll for Hyper window
+		deadline := time.Now().Add(15 * time.Second)
+		var hwnd uintptr
+		for time.Now().Before(deadline) {
+			if h := findHyperWindow(entry.Name, preExisting); h != 0 {
+				hwnd = h
+				break
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+
+		if hwnd == 0 {
+			return
+		}
+
+		// Ensure window is in restored state (un-maximize/un-minimize)
+		procShowWindow.Call(hwnd, swRestore)
+
+		// Resize window to spacious layout (1200x700) to force full welcome screen with large mascot
+		procSetWindowPos.Call(hwnd, 0, 0, 0, 1200, 700, swpNoMove|swpNoZOrder)
+
+		// Apply Premium Custom Border Color via DWM matching entry.Color
+		color := strings.TrimSpace(entry.Color)
+		if color != "" {
+			r, g, b, ok := parseHex(color)
+			if ok {
+				// COLORREF format (0x00bbggrr)
+				colorVal := uint32(r) | (uint32(g) << 8) | (uint32(b) << 16)
+				procDwmSetWindowAttribute.Call(hwnd, dwmwaBorderColor, uintptr(unsafe.Pointer(&colorVal)), 4)
+			}
+		}
+
+		// Engage Active High-Frequency Title Lock
+		lockedTitle := title
+		if strings.TrimSpace(lockedTitle) == "" {
+			lockedTitle = entry.Name
+		}
+		dot := nearestDot(color)
+		if dot != "" && !strings.Contains(lockedTitle, dot) {
+			lockedTitle = dot + " " + lockedTitle
+		}
+
+		titlePtr := syscall.StringToUTF16Ptr(lockedTitle)
+		for {
+			if vis, _, _ := procIsWindow.Call(hwnd); vis == 0 {
+				break
+			}
+			// Guard against HWND reuse: when the Hyper window closes, Windows
+			// recycles its handle value for an unrelated window (e.g. the
+			// editor). IsWindow still reports true for the recycled handle, so
+			// without re-verifying ownership the loop would hijack whatever now
+			// owns it — retitling/resizing the wrong app. Re-check the owning
+			// process before every retitle and stop once it's no longer Hyper.
+			if !strings.EqualFold(getWindowProcessName(hwnd), "Hyper.exe") {
+				break
+			}
+			procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(titlePtr)))
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 }

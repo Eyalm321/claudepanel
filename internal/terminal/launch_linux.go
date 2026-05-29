@@ -44,14 +44,6 @@ func builtinPresets() []Preset {
 			Quote:      quoteNone,
 		},
 		{
-			Key:        "alacritty",
-			Exe:        "alacritty",
-			PreColor:   []string{"--title", "{title}", "--working-directory", "{dir}", "-e", "bash", "-lc", "{cmd}"},
-			DotInTitle: true,
-			Shell:      "bash",
-			Quote:      quoteNone,
-		},
-		{
 			Key:        "konsole",
 			Exe:        "konsole",
 			PreColor:   []string{"-p", "tabtitle={title}", "--workdir", "{dir}", "-e", "bash", "-lc", "{cmd}"},
@@ -116,3 +108,11 @@ func DetectDefault() config.LauncherConfig {
 func detachAttrs() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setsid: true}
 }
+
+func GetPreExisting(preset string) map[uintptr]bool {
+	return nil
+}
+
+func PostLaunch(preset string, entry config.TerminalConfig, title string, preExisting map[uintptr]bool) {}
+
+
