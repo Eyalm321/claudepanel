@@ -14,6 +14,7 @@
 package terminal
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 
 	"claudepanel/internal/config"
 )
@@ -47,6 +49,7 @@ type Preset struct {
 	NeedsOSC   bool     // emit an OSC title escape from inside the shell command
 	DirInShell bool     // `cd <dir>` inside the shell command (no working-dir flag)
 	Shell      string   // keep-open hint: "bash"/"sh" append `; exec bash`/`; exec sh`
+	EncodeCmd  bool     // base64-encode {cmd} for pwsh -EncodedCommand (see build)
 	Quote      quoteMode
 }
 
@@ -217,6 +220,32 @@ func envAssign(shell, key, val string) string {
 	}
 }
 
+// encodePwshCommand encodes a PowerShell script for `pwsh -EncodedCommand`:
+// base64 of its UTF-16LE bytes. The result contains only base64 characters, so
+// it passes through wt.exe's `;`-splitting commandline parser untouched.
+func encodePwshCommand(s string) string {
+	u := utf16.Encode([]rune(s))
+	buf := make([]byte, len(u)*2)
+	for i, c := range u {
+		buf[i*2] = byte(c)
+		buf[i*2+1] = byte(c >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
+// displayLabel is the human label for an entry: "Name", "Name [Account]", or
+// "Name [Account] · sublabel".
+func displayLabel(entry config.TerminalConfig, opts LaunchOpts) string {
+	label := entry.Name
+	if opts.Account != "" {
+		label += " [" + opts.Account + "]"
+	}
+	if sub := strings.TrimSpace(opts.Sublabel); sub != "" {
+		label += " · " + sub
+	}
+	return label
+}
+
 // build resolves the launcher to an exe + argv. It is pure (no process is
 // started) so argv/quoting can be asserted in tests. opts adds the title's
 // "[Account]" tag, an optional "· sublabel" suffix, and the CLAUDE_CONFIG_DIR
@@ -227,13 +256,7 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig, opts Lau
 	dot := nearestDot(color)
 	dir := resolveDir(entry.Dir)
 	configDir := expandHome(strings.TrimSpace(opts.ConfigDir))
-	label := entry.Name
-	if opts.Account != "" {
-		label += " [" + opts.Account + "]"
-	}
-	if sub := strings.TrimSpace(opts.Sublabel); sub != "" {
-		label += " · " + sub
-	}
+	label := displayLabel(entry, opts)
 	cmd := strings.TrimSpace(entry.Command)
 	if cmd == "" {
 		cmd = "claude"
@@ -272,6 +295,15 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig, opts Lau
 		title = dot + " " + label
 	}
 	shellCmd := composeShellCmd(cmd, p.Shell, p.NeedsOSC, p.DirInShell, dir, title, configDir)
+
+	// Windows Terminal re-parses its commandline and treats `;` as a command
+	// delimiter even inside a quoted arg, which would split our "$env:…; claude"
+	// export. Hand the script to pwsh as a base64 -EncodedCommand instead: the
+	// payload is pure base64 (no ;, spaces or quotes) so it survives wt.exe's
+	// parser intact.
+	if p.EncodeCmd {
+		shellCmd = encodePwshCommand(shellCmd)
+	}
 
 	v := subVals{title: title, dir: dir, color: color, dot: dot, cmd: shellCmd}
 

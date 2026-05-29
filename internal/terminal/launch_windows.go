@@ -16,19 +16,25 @@ func builtinPresets() []Preset {
 		{
 			Key: "windows-terminal",
 			Exe: "wt.exe",
-			// `wt -w new new-tab --suppressApplicationTitle --title "🔵 NAME" -d DIR pwsh -NoExit -Command CMD`.
-			// The colored-dot emoji in the title carries the color (no --tabColor),
-			// so name + color read consistently in the tab strip on every OS.
-			// --suppressApplicationTitle pins the tab to our --title so the running
-			// program (e.g. `claude`, which sets its own OSC title) can't rename it.
+			// `wt -w new new-tab --suppressApplicationTitle --title "🔵 NAME" --tabColor #hex -d DIR pwsh -NoExit -EncodedCommand <b64>`.
+			// --tabColor tints the tab via WT itself, so the color persists whether
+			// the window is focused or not (DWM per-window border doesn't: WT owns
+			// the frame and repaints it on activation). The emoji dot in the title
+			// is the cross-OS fallback. --suppressApplicationTitle pins the tab to
+			// our --title so the running program (e.g. `claude`) can't rename it.
+			// The command is a base64 -EncodedCommand because wt.exe splits its
+			// commandline on `;` (even inside quotes), which would otherwise break
+			// the "$env:CLAUDE_CONFIG_DIR=…; claude" account-scoping export.
 			PreColor:   []string{"-w", "new", "new-tab", "--suppressApplicationTitle", "--title", "{title}"},
-			PostColor:  []string{"-d", "{dir}", "pwsh", "-NoExit", "-Command", "{cmd}"},
+			ColorArgs:  []string{"--tabColor", "{color}"},
+			PostColor:  []string{"-d", "{dir}", "pwsh", "-NoExit", "-EncodedCommand", "{cmd}"},
 			DotInTitle: true,
-			// {cmd} runs in pwsh (-Command); marks the shell for env-var syntax.
-			// composeShellCmd only appends `exec` for bash/sh, so this is a no-op
-			// for keep-open (WT stays open via -NoExit).
-			Shell: "pwsh",
-			Quote: quoteNone,
+			// {cmd} runs in pwsh; marks the shell for env-var syntax. composeShellCmd
+			// only appends `exec` for bash/sh, so this is a no-op for keep-open (WT
+			// stays open via -NoExit).
+			Shell:     "pwsh",
+			EncodeCmd: true,
+			Quote:     quoteNone,
 		},
 		{
 			Key: "powershell",

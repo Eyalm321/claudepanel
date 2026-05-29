@@ -1,14 +1,29 @@
 package terminal
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"claudepanel/internal/config"
 )
+
+// decodePwsh reverses encodePwshCommand: base64 → UTF-16LE → string.
+func decodePwsh(b64 string) string {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return ""
+	}
+	u := make([]uint16, len(raw)/2)
+	for i := range u {
+		u[i] = uint16(raw[i*2]) | uint16(raw[i*2+1])<<8
+	}
+	return string(utf16.Decode(u))
+}
 
 func contains(args []string, want string) bool {
 	for _, a := range args {
@@ -210,20 +225,27 @@ func TestBuildWindowsTerminal(t *testing.T) {
 	if exe != "wt.exe" {
 		t.Errorf("exe = %q", exe)
 	}
-	// Color rides in the title as the nearest emoji dot — no native tab color.
+	// Color shows two ways: the nearest emoji dot in the title, and WT's native
+	// --tabColor (which persists through focus changes, unlike a DWM border).
 	ti := indexOf(args, "--title")
 	if ti < 0 || args[ti+1] != "🔵 CRM" {
 		t.Errorf("expected --title \"🔵 CRM\", got args=%v", args)
 	}
-	if contains(args, "--tabColor") {
-		t.Errorf("windows-terminal must not use --tabColor, got args=%v", args)
+	tc := indexOf(args, "--tabColor")
+	if tc < 0 || args[tc+1] != "#3B82F6" {
+		t.Errorf("expected --tabColor #3B82F6, got args=%v", args)
 	}
 	// Title must be pinned so `claude` can't rename the tab.
 	if !contains(args, "--suppressApplicationTitle") {
 		t.Errorf("expected --suppressApplicationTitle, got args=%v", args)
 	}
-	if !contains(args, "claude") {
-		t.Errorf("missing claude command: %v", args)
+	// Command is passed base64-encoded; decode and check it runs claude.
+	ci := indexOf(args, "-EncodedCommand")
+	if ci < 0 || ci+1 >= len(args) {
+		t.Fatalf("no -EncodedCommand arg: %v", args)
+	}
+	if decodePwsh(args[ci+1]) != "claude" {
+		t.Errorf("decoded command = %q, want \"claude\"", decodePwsh(args[ci+1]))
 	}
 }
 
@@ -244,6 +266,38 @@ func TestBuildWindowsTerminalEmptyColorBareTitle(t *testing.T) {
 	}
 	if contains(args, "--tabColor") {
 		t.Errorf("windows-terminal must not use --tabColor, got args=%v", args)
+	}
+}
+
+func TestBuildWindowsTerminalEncodesEnvCommand(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only preset")
+	}
+	entry := config.TerminalConfig{Name: "CRM", Dir: "/tmp/proj"}
+	launcher := config.LauncherConfig{Preset: "windows-terminal"}
+	_, args, err := build(entry, launcher, LaunchOpts{Account: "MAIN", ConfigDir: `C:\Users\Admin\.claude`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Account tag in the title.
+	ti := indexOf(args, "--title")
+	if ti < 0 || args[ti+1] != "CRM [MAIN]" {
+		t.Errorf("expected --title \"CRM [MAIN]\", got args=%v", args)
+	}
+	// The command is base64-encoded for -EncodedCommand; the payload must carry
+	// the CLAUDE_CONFIG_DIR export with a plain `;` (no wt-escaping needed) so
+	// pwsh runs `claude` scoped to the account.
+	ci := indexOf(args, "-EncodedCommand")
+	if ci < 0 || ci+1 >= len(args) {
+		t.Fatalf("no -EncodedCommand arg: %v", args)
+	}
+	want := `$env:CLAUDE_CONFIG_DIR='C:\Users\Admin\.claude'; claude`
+	if got := decodePwsh(args[ci+1]); got != want {
+		t.Errorf("decoded command = %q, want %q", got, want)
+	}
+	// The encoded payload must be free of characters wt.exe would choke on.
+	if strings.ContainsAny(args[ci+1], "; \"'") {
+		t.Errorf("encoded command must be plain base64, got %q", args[ci+1])
 	}
 }
 
