@@ -714,11 +714,19 @@ func (a *App) OpenTerminal(index int, sublabel string) error {
 		}
 	}
 	entry := a.cfg.Terminals[index]
-	if err := terminal.Launch(entry, a.cfg.Launcher, sublabel); err != nil {
+	// Scope the terminal to the currently-shown account: its name tags the title
+	// and its config dir becomes CLAUDE_CONFIG_DIR for the launched `claude`.
+	opts := terminal.LaunchOpts{Sublabel: sublabel}
+	if a.cfg.ActiveAccount >= 0 && a.cfg.ActiveAccount < len(a.cfg.Accounts) {
+		acc := a.cfg.Accounts[a.cfg.ActiveAccount]
+		opts.Account = acc.Name
+		opts.ConfigDir = acc.Path
+	}
+	if err := terminal.Launch(entry, a.cfg.Launcher, opts); err != nil {
 		log.Printf("[terminal] open %q via %s failed: %v", entry.Name, a.cfg.Launcher.Preset, err)
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
-	log.Printf("[terminal] opened %q via %s", entry.Name, a.cfg.Launcher.Preset)
+	log.Printf("[terminal] opened %q (account %q) via %s", entry.Name, opts.Account, a.cfg.Launcher.Preset)
 	return nil
 }
 

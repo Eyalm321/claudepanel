@@ -493,6 +493,10 @@ setRadioStatus('off');
 // hidden entirely when no launchers are configured (like the account arrows when
 // fewer than two accounts).
 let activeTermIdx = 0;
+// While a terminal is being launched the button shows "LAUNCHING <NAME>" for a
+// brief moment as click feedback (the terminal itself opens detached).
+let isLaunching = false;
+let launchTimer = null;
 
 function applyTermSegment() {
   const seg = document.getElementById('seg-term');
@@ -508,7 +512,8 @@ function applyTermSegment() {
   if (activeTermIdx >= terms.length) activeTermIdx = 0;
 
   const t = terms[activeTermIdx];
-  document.getElementById('val-term').textContent = (t.name || '---').toUpperCase();
+  const name = (t.name || '---').toUpperCase();
+  document.getElementById('val-term').textContent = isLaunching ? `LAUNCHING ${name}` : name;
   const dot = document.getElementById('dot-term');
   if (t.color) {
     dot.style.background = t.color; // exact configured hex, inline (beats theme CSS)
@@ -553,9 +558,17 @@ async function openTerm(e) {
   const now = Date.now();
   if (now - lastTermOpen < 400) return;
   lastTermOpen = now;
+  // Flash "LAUNCHING <NAME>" on the button as click feedback, then restore.
+  isLaunching = true;
+  applyTermSegment();
+  clearTimeout(launchTimer);
+  launchTimer = setTimeout(() => { isLaunching = false; applyTermSegment(); }, 1500);
   try {
     await OpenTerminal(activeTermIdx, '');
   } catch (err) {
+    clearTimeout(launchTimer);
+    isLaunching = false;
+    applyTermSegment();
     alert('Could not open terminal: ' + err);
   }
 }

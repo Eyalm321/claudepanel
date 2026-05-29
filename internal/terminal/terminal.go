@@ -57,6 +57,20 @@ type PresetInfo struct {
 	OS    string `json:"os"`
 }
 
+// LaunchOpts carries the per-launch context layered on top of a terminal entry.
+// All fields are optional.
+type LaunchOpts struct {
+	// Account is the currently-shown account name; when set it's shown in the
+	// title as "Name [Account]" so the terminal's identity is visible.
+	Account string
+	// ConfigDir is the account's Claude config directory. When set, the launched
+	// shell exports CLAUDE_CONFIG_DIR=<dir> before running the command, so
+	// `claude` uses that account's credentials.
+	ConfigDir string
+	// Sublabel is an optional per-launch title suffix ("Name [Account] · sub").
+	Sublabel string
+}
+
 type quoteMode int
 
 const (
@@ -160,10 +174,11 @@ func substitute(tmpl []string, v subVals, q quoteMode) []string {
 }
 
 // composeShellCmd builds the shell command string for shell-based presets:
+// optional CLAUDE_CONFIG_DIR export (so `claude` uses the active account),
 // optional `cd`, optional OSC title escape, the user command, and an optional
 // keep-open `exec` so the window stays after the command exits. It is pure so
 // the OSC-injection / quoting behaviour can be tested on any OS.
-func composeShellCmd(cmd, shell string, needsOSC, dirInShell bool, dir, title string) string {
+func composeShellCmd(cmd, shell string, needsOSC, dirInShell bool, dir, title, configDir string) string {
 	out := cmd
 	switch shell {
 	case "bash":
@@ -177,20 +192,47 @@ func composeShellCmd(cmd, shell string, needsOSC, dirInShell bool, dir, title st
 	if dirInShell && dir != "" {
 		out = "cd " + shquote(dir) + "; " + out
 	}
+	// Prepend last so the env is set before anything else runs. Injecting it
+	// into the shell command (rather than the process environment) is the
+	// reliable path through Windows Terminal / terminal-server models that don't
+	// pass the launcher's environment to the new tab.
+	if configDir != "" {
+		out = envAssign(shell, "CLAUDE_CONFIG_DIR", configDir) + out
+	}
 	return out
 }
 
+// envAssign returns a shell statement (with trailing separator) that sets an
+// environment variable for the given shell before the next command runs.
+func envAssign(shell, key, val string) string {
+	switch shell {
+	case "pwsh":
+		return "$env:" + key + "=" + pwshquote(val) + "; "
+	case "cmd":
+		// cmd `set VAR=value` takes everything up to the next & as the value, so
+		// spaces are fine unquoted; Claude config paths don't contain &/^.
+		return "set " + key + "=" + val + "&"
+	default: // bash / sh / POSIX
+		return "export " + key + "=" + shquote(val) + "; "
+	}
+}
+
 // build resolves the launcher to an exe + argv. It is pure (no process is
-// started) so argv/quoting can be asserted in tests. sublabel is an optional
-// per-launch suffix appended to the title (e.g. "CRM · backend") so several
-// terminals opened from one entry can be told apart; it never touches config.
-func build(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel string) (string, []string, error) {
+// started) so argv/quoting can be asserted in tests. opts adds the title's
+// "[Account]" tag, an optional "· sublabel" suffix, and the CLAUDE_CONFIG_DIR
+// export so the launched `claude` is scoped to the active account. None of it
+// touches config.
+func build(entry config.TerminalConfig, launcher config.LauncherConfig, opts LaunchOpts) (string, []string, error) {
 	color := strings.TrimSpace(entry.Color)
 	dot := nearestDot(color)
 	dir := resolveDir(entry.Dir)
+	configDir := expandHome(strings.TrimSpace(opts.ConfigDir))
 	label := entry.Name
-	if sub := strings.TrimSpace(sublabel); sub != "" {
-		label = entry.Name + " · " + sub
+	if opts.Account != "" {
+		label += " [" + opts.Account + "]"
+	}
+	if sub := strings.TrimSpace(opts.Sublabel); sub != "" {
+		label += " · " + sub
 	}
 	cmd := strings.TrimSpace(entry.Command)
 	if cmd == "" {
@@ -229,7 +271,7 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel
 	if p.DotInTitle && dot != "" {
 		title = dot + " " + label
 	}
-	shellCmd := composeShellCmd(cmd, p.Shell, p.NeedsOSC, p.DirInShell, dir, title)
+	shellCmd := composeShellCmd(cmd, p.Shell, p.NeedsOSC, p.DirInShell, dir, title, configDir)
 
 	v := subVals{title: title, dir: dir, color: color, dot: dot, cmd: shellCmd}
 
@@ -246,8 +288,8 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel
 // terminal outlives ClaudePanel. It never Wait()s. The child's working
 // directory is set when the configured dir exists, which also gives the `cmd`
 // preset its working directory without fragile cmd.exe quoting.
-func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel string) error {
-	exe, args, err := build(entry, launcher, sublabel)
+func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts LaunchOpts) error {
+	exe, args, err := build(entry, launcher, opts)
 	if err != nil {
 		return err
 	}
@@ -256,6 +298,13 @@ func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, sublabe
 		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 			cmd.Dir = dir
 		}
+	}
+	// Also set CLAUDE_CONFIG_DIR in the process environment. Directly-spawned
+	// shells (powershell.exe, cmd.exe) inherit it, and it's the only channel for
+	// the custom preset (whose template we don't wrap in a known shell). Builtin
+	// shell presets additionally get it injected into the command (see build).
+	if cfgDir := expandHome(strings.TrimSpace(opts.ConfigDir)); cfgDir != "" {
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+cfgDir)
 	}
 	cmd.SysProcAttr = detachAttrs()
 	if err := cmd.Start(); err != nil {

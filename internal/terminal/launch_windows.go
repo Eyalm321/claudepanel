@@ -24,7 +24,11 @@ func builtinPresets() []Preset {
 			PreColor:   []string{"-w", "new", "new-tab", "--suppressApplicationTitle", "--title", "{title}"},
 			PostColor:  []string{"-d", "{dir}", "pwsh", "-NoExit", "-Command", "{cmd}"},
 			DotInTitle: true,
-			Quote:      quoteNone,
+			// {cmd} runs in pwsh (-Command); marks the shell for env-var syntax.
+			// composeShellCmd only appends `exec` for bash/sh, so this is a no-op
+			// for keep-open (WT stays open via -NoExit).
+			Shell: "pwsh",
+			Quote: quoteNone,
 		},
 		{
 			Key: "powershell",

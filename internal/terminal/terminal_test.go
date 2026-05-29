@@ -84,7 +84,7 @@ func TestExpandHome(t *testing.T) {
 func TestComposeShellCmd(t *testing.T) {
 	// OSC title injection + keep-open + cd, with a malicious title/dir that
 	// must be single-quoted (data, never executed).
-	got := composeShellCmd("claude", "bash", true, true, "/a'b", "🔵 X'Y")
+	got := composeShellCmd("claude", "bash", true, true, "/a'b", "🔵 X'Y", "")
 	wantCd := `cd '/a'\''b';`
 	if !strings.HasPrefix(got, wantCd) {
 		t.Errorf("missing/incorrect cd prefix: %q", got)
@@ -100,9 +100,23 @@ func TestComposeShellCmd(t *testing.T) {
 	}
 
 	// No OSC, no cd, sh keep-open.
-	got = composeShellCmd("claude --resume", "sh", false, false, "/x", "T")
+	got = composeShellCmd("claude --resume", "sh", false, false, "/x", "T", "")
 	if got != "claude --resume; exec sh" {
 		t.Errorf("plain sh compose = %q", got)
+	}
+
+	// CLAUDE_CONFIG_DIR export prepended, per-shell syntax, before the command.
+	bash := composeShellCmd("claude", "bash", false, false, "", "T", "/home/u/.acct")
+	if bash != "export CLAUDE_CONFIG_DIR='/home/u/.acct'; claude; exec bash" {
+		t.Errorf("bash env compose = %q", bash)
+	}
+	pwsh := composeShellCmd("claude", "pwsh", false, false, "", "T", `C:\a\.acct`)
+	if pwsh != `$env:CLAUDE_CONFIG_DIR='C:\a\.acct'; claude` {
+		t.Errorf("pwsh env compose = %q", pwsh)
+	}
+	cmd := composeShellCmd("claude", "cmd", false, false, "", "T", `C:\a\.acct`)
+	if cmd != `set CLAUDE_CONFIG_DIR=C:\a\.acct&claude` {
+		t.Errorf("cmd env compose = %q", cmd)
 	}
 }
 
@@ -113,7 +127,7 @@ func TestBuildCustom(t *testing.T) {
 		Exe:    "myterm",
 		Args:   []string{"--title", "{title}", "--cd", "{dir}", "--", "{cmd}"},
 	}
-	exe, args, err := build(entry, launcher, "")
+	exe, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +144,7 @@ func TestBuildSublabelInTitle(t *testing.T) {
 	entry := config.TerminalConfig{Name: "CRM", Color: "#3B82F6", Dir: "/tmp/x"}
 	launcher := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{title}"}}
 	// Sublabel is appended after the name, inside the dot-prefixed title.
-	_, args, err := build(entry, launcher, "backend")
+	_, args, err := build(entry, launcher, LaunchOpts{Sublabel: "backend"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,16 +152,34 @@ func TestBuildSublabelInTitle(t *testing.T) {
 		t.Errorf("sublabel title = %v, want \"🔵 CRM · backend\"", args)
 	}
 	// Whitespace-only sublabel is treated as none.
-	_, a2, _ := build(entry, launcher, "   ")
+	_, a2, _ := build(entry, launcher, LaunchOpts{Sublabel: "   "})
 	if joined(a2) != "🔵 CRM" {
 		t.Errorf("blank sublabel must not add a separator: %v", a2)
+	}
+}
+
+func TestBuildAccountInTitle(t *testing.T) {
+	entry := config.TerminalConfig{Name: "CRM", Color: "#3B82F6", Dir: "/tmp/x"}
+	launcher := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{title}"}}
+	// Account is shown as "Name [Account]" after the emoji dot.
+	_, args, err := build(entry, launcher, LaunchOpts{Account: "MAIN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined(args) != "🔵 CRM [MAIN]" {
+		t.Errorf("account title = %v, want \"🔵 CRM [MAIN]\"", args)
+	}
+	// Account + sublabel compose as "Name [Account] · sub".
+	_, a2, _ := build(entry, launcher, LaunchOpts{Account: "MAIN", Sublabel: "backend"})
+	if joined(a2) != "🔵 CRM [MAIN] · backend" {
+		t.Errorf("account+sublabel title = %v, want \"🔵 CRM [MAIN] · backend\"", a2)
 	}
 }
 
 func TestBuildCustomDefaultCommand(t *testing.T) {
 	entry := config.TerminalConfig{Name: "X", Dir: "/tmp"}
 	launcher := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{cmd}"}}
-	_, args, err := build(entry, launcher, "")
+	_, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +189,7 @@ func TestBuildCustomDefaultCommand(t *testing.T) {
 	// No color → no emoji dot prepended to the title.
 	entry2 := config.TerminalConfig{Name: "Y", Dir: "/tmp"}
 	l2 := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{title}"}}
-	_, a2, _ := build(entry2, l2, "")
+	_, a2, _ := build(entry2, l2, LaunchOpts{})
 	if joined(a2) != "Y" {
 		t.Errorf("uncolored title should be bare name: %v", a2)
 	}
@@ -171,7 +203,7 @@ func TestBuildWindowsTerminal(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "#3B82F6", Dir: "/tmp/proj"}
 	launcher := config.LauncherConfig{Preset: "windows-terminal"}
-	exe, args, err := build(entry, launcher, "")
+	exe, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +233,7 @@ func TestBuildWindowsTerminalEmptyColorBareTitle(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "", Dir: "/tmp/proj"}
 	launcher := config.LauncherConfig{Preset: "windows-terminal"}
-	_, args, err := build(entry, launcher, "")
+	_, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +255,7 @@ func TestBuildPowershellQuotesData(t *testing.T) {
 	// inert data, never executed.
 	entry := config.TerminalConfig{Name: "a'b", Color: "#FF0000", Dir: "/tmp/x"}
 	launcher := config.LauncherConfig{Preset: "powershell"}
-	exe, args, err := build(entry, launcher, "")
+	exe, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +283,7 @@ func TestBuildCmd(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "#00FF00", Dir: "/tmp/x"}
 	launcher := config.LauncherConfig{Preset: "cmd"}
-	exe, args, err := build(entry, launcher, "")
+	exe, args, err := build(entry, launcher, LaunchOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +297,7 @@ func TestBuildCmd(t *testing.T) {
 }
 
 func TestBuildUnknownPreset(t *testing.T) {
-	_, _, err := build(config.TerminalConfig{Name: "X"}, config.LauncherConfig{Preset: "nope"}, "")
+	_, _, err := build(config.TerminalConfig{Name: "X"}, config.LauncherConfig{Preset: "nope"}, LaunchOpts{})
 	if err == nil {
 		t.Errorf("expected error for unknown preset")
 	}

@@ -15,18 +15,28 @@ func TestParseItem(t *testing.T) {
 		wantErr  bool
 	}{
 		{"bare video id", "YmQ7jRgf4f0", config.ItemVideo, "YmQ7jRgf4f0", false},
+		{"bare playlist id", "PLAbcdEfGhIjKlMnOpQrSt", config.ItemPlaylist, "PLAbcdEfGhIjKlMnOpQrSt", false},
 		{"watch url", "https://www.youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
-		{"watch url no scheme", "youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"watch url https no www", "https://youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"watch url www no scheme", "www.youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"watch url bare host", "youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"music subdomain", "https://music.youtube.com/watch?v=EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
 		{"youtu.be short", "https://youtu.be/EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"youtu.be with si param", "https://youtu.be/EWrX250Zhko?si=AbCdEfGhIj", config.ItemVideo, "EWrX250Zhko", false},
 		{"shorts", "https://www.youtube.com/shorts/EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
 		{"embed", "https://www.youtube.com/embed/EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"v form", "https://www.youtube.com/v/EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
+		{"live url", "https://www.youtube.com/live/EWrX250Zhko", config.ItemVideo, "EWrX250Zhko", false},
 		{"watch with list -> video wins", "https://www.youtube.com/watch?v=EWrX250Zhko&list=PLAbcdEfGhIjKlMnOpQrSt", config.ItemVideo, "EWrX250Zhko", false},
 		{"youtu.be with list -> video wins", "https://youtu.be/EWrX250Zhko?list=PLAbcdEfGhIjKlMnOpQrSt", config.ItemVideo, "EWrX250Zhko", false},
 		{"playlist url", "https://www.youtube.com/playlist?list=PLAbcdEfGhIjKlMnOpQrSt", config.ItemPlaylist, "PLAbcdEfGhIjKlMnOpQrSt", false},
+		{"playlist url www no scheme", "www.youtube.com/playlist?list=PLAbcdEfGhIjKlMnOpQrSt", config.ItemPlaylist, "PLAbcdEfGhIjKlMnOpQrSt", false},
+		{"playlist url with extra param", "https://www.youtube.com/playlist?list=PLAbcdEfGhIjKlMnOpQrSt&si=xyz", config.ItemPlaylist, "PLAbcdEfGhIjKlMnOpQrSt", false},
 		{"list-first query", "https://www.youtube.com/watch?list=PLAbcdEfGhIjKlMnOpQrSt", config.ItemPlaylist, "PLAbcdEfGhIjKlMnOpQrSt", false},
 		{"whitespace trimmed", "  YmQ7jRgf4f0  ", config.ItemVideo, "YmQ7jRgf4f0", false},
 		{"empty", "", "", "", true},
 		{"garbage", "hello", "", "", true},
+		{"12-char token (neither video nor playlist)", "abcdefghijkl", "", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
