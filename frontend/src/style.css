@@ -617,6 +617,9 @@ html, body {
 
 .panel-check { width: 14px; height: 14px; margin: 0; cursor: pointer; accent-color: var(--clay); }
 
+.panel-hint { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.panel-hint b { color: var(--text); font-weight: bold; }
+
 /* Bump the shared editor controls up for the roomier popup. */
 .modal-body .editor-input,
 .modal-body .editor-select { height: 26px; font-size: 12px; padding: 2px 6px; }

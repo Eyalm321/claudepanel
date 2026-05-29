@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"claudepanel/internal/audio"
@@ -412,25 +414,38 @@ func (a *App) ToggleStartup() {
 	}
 }
 
-func (a *App) ConfigureAccounts()  { a.openSettings("accounts") }
-func (a *App) ConfigureTerminals() { a.openSettings("terminals") }
-func (a *App) ConfigureStations()  { a.openSettings("stations") }
+func (a *App) ConfigureAccounts()  { a.openSettings("accounts", 0, "") }
+func (a *App) ConfigureTerminals() { a.openSettings("terminals", 0, "") }
+func (a *App) ConfigureStations()  { a.openSettings("stations", 0, "") }
+
+// settingsShowPayload tells the popup which panel to render. Index/Name carry
+// extra context for context-specific panels (e.g. "terminal-open" needs the
+// terminal entry to launch and its display name); they're 0/"" otherwise.
+type settingsShowPayload struct {
+	Panel string `json:"panel"`
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+}
 
 // openSettings shows the reusable settings popup focused on the given panel
-// ("accounts", "terminals", or "stations"). The window is its own frameless
-// WebviewWindow (the bar itself is only BarHeight tall, with no room for a
-// modal). It is created lazily and hidden — not destroyed — on close, so
-// reopening preserves page state and is cheap.
+// ("accounts", "terminals", "stations", or "terminal-open"). The window is its
+// own frameless WebviewWindow (the bar itself is only BarHeight tall, with no
+// room for a modal). It is created lazily and hidden — not destroyed — on close,
+// so reopening preserves page state and is cheap.
 //
 // The target panel is delivered two ways for robustness: encoded in the URL on
 // first creation (the page can't have registered an event listener yet), and
 // re-sent via the "settings:show" event for every subsequent open / panel
 // switch on the already-loaded page.
-func (a *App) openSettings(panel string) {
+func (a *App) openSettings(panel string, index int, name string) {
 	if a.app == nil {
 		return
 	}
 	if a.settingsWindow == nil {
+		q := "/settings.html?panel=" + panel
+		if index != 0 || name != "" {
+			q += "&index=" + strconv.Itoa(index) + "&name=" + url.QueryEscape(name)
+		}
 		a.settingsWindow = a.app.Window.NewWithOptions(application.WebviewWindowOptions{
 			Name:             "settings",
 			Title:            "Claude Panel",
@@ -443,13 +458,13 @@ func (a *App) openSettings(panel string) {
 			DisableResize:    true,
 			Hidden:           true,
 			BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
-			URL:              "/settings.html?panel=" + panel,
+			URL:              q,
 		})
 	}
 	a.settingsWindow.Show()
 	a.settingsWindow.Center()
 	a.settingsWindow.Focus()
-	a.app.Event.Emit("settings:show", panel)
+	a.app.Event.Emit("settings:show", settingsShowPayload{Panel: panel, Index: index, Name: name})
 }
 
 func (a *App) Quit() {
@@ -683,8 +698,10 @@ func (a *App) GetPushdownStats() platform.PushdownStats {
 
 // OpenTerminal launches the configured launcher entry at index in a new,
 // visible terminal window. The launcher program is resolved lazily on first
-// use (no terminal detection happens in config.Defaults) and persisted.
-func (a *App) OpenTerminal(index int) error {
+// use (no terminal detection happens in config.Defaults) and persisted. sublabel
+// is an optional per-launch suffix appended to the tab title ("CRM · backend")
+// so several terminals from one entry can be told apart; "" for a plain open.
+func (a *App) OpenTerminal(index int, sublabel string) error {
 	if index < 0 || index >= len(a.cfg.Terminals) {
 		return fmt.Errorf("terminal index %d out of range", index)
 	}
@@ -697,11 +714,23 @@ func (a *App) OpenTerminal(index int) error {
 		}
 	}
 	entry := a.cfg.Terminals[index]
-	if err := terminal.Launch(entry, a.cfg.Launcher); err != nil {
+	if err := terminal.Launch(entry, a.cfg.Launcher, sublabel); err != nil {
 		log.Printf("[terminal] open %q via %s failed: %v", entry.Name, a.cfg.Launcher.Preset, err)
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
 	log.Printf("[terminal] opened %q via %s", entry.Name, a.cfg.Launcher.Preset)
+	return nil
+}
+
+// OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — a
+// sublabel textbox for entry index. It's the Shift-click path from the bar; the
+// panel then calls OpenTerminal(index, sublabel). Plain click skips this and
+// opens directly.
+func (a *App) OpenTerminalPrompt(index int) error {
+	if index < 0 || index >= len(a.cfg.Terminals) {
+		return fmt.Errorf("terminal index %d out of range", index)
+	}
+	a.openSettings("terminal-open", index, a.cfg.Terminals[index].Name)
 	return nil
 }
 

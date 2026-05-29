@@ -4,7 +4,7 @@ import {
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
   SaveConfig, SetPinned,
   RadioPlayStation, RadioPause, RadioSetVolume, SetActiveStation,
-  OpenTerminal
+  OpenTerminal, OpenTerminalPrompt
 } from '../bindings/claudepanel/app.js';
 import { Events } from '@wailsio/runtime';
 
@@ -539,15 +539,22 @@ async function refreshTerminals() {
 }
 
 let lastTermOpen = 0;
-async function openTerm() {
+async function openTerm(e) {
   const terms = (cfg && cfg.terminals) || [];
   if (terms.length === 0) return;
+  // Shift-click: prompt for a per-launch sublabel in the popup rather than
+  // opening immediately. Plain click stays an instant one-click open.
+  if (e && e.shiftKey) {
+    try { await OpenTerminalPrompt(activeTermIdx); }
+    catch (err) { console.error('terminal prompt failed:', err); }
+    return;
+  }
   // ~400ms debounce so a fast double-click can't spawn two windows.
   const now = Date.now();
   if (now - lastTermOpen < 400) return;
   lastTermOpen = now;
   try {
-    await OpenTerminal(activeTermIdx);
+    await OpenTerminal(activeTermIdx, '');
   } catch (err) {
     alert('Could not open terminal: ' + err);
   }

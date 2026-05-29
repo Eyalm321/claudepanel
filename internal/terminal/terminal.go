@@ -181,12 +181,17 @@ func composeShellCmd(cmd, shell string, needsOSC, dirInShell bool, dir, title st
 }
 
 // build resolves the launcher to an exe + argv. It is pure (no process is
-// started) so argv/quoting can be asserted in tests.
-func build(entry config.TerminalConfig, launcher config.LauncherConfig) (string, []string, error) {
+// started) so argv/quoting can be asserted in tests. sublabel is an optional
+// per-launch suffix appended to the title (e.g. "CRM · backend") so several
+// terminals opened from one entry can be told apart; it never touches config.
+func build(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel string) (string, []string, error) {
 	color := strings.TrimSpace(entry.Color)
 	dot := nearestDot(color)
 	dir := resolveDir(entry.Dir)
-	name := entry.Name
+	label := entry.Name
+	if sub := strings.TrimSpace(sublabel); sub != "" {
+		label = entry.Name + " · " + sub
+	}
 	cmd := strings.TrimSpace(entry.Command)
 	if cmd == "" {
 		cmd = "claude"
@@ -204,9 +209,9 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig) (string,
 		if exe == "" {
 			return "", nil, fmt.Errorf("custom terminal: no executable configured")
 		}
-		title := name
+		title := label
 		if dot != "" {
-			title = dot + " " + name
+			title = dot + " " + label
 		}
 		v := subVals{title: title, dir: dir, color: color, dot: dot, cmd: cmd}
 		return subOne(exe, v, quoteNone), substitute(launcher.Args, v, quoteNone), nil
@@ -220,9 +225,9 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig) (string,
 		p.Exe = launcher.Exe
 	}
 
-	title := name
+	title := label
 	if p.DotInTitle && dot != "" {
-		title = dot + " " + name
+		title = dot + " " + label
 	}
 	shellCmd := composeShellCmd(cmd, p.Shell, p.NeedsOSC, p.DirInShell, dir, title)
 
@@ -241,8 +246,8 @@ func build(entry config.TerminalConfig, launcher config.LauncherConfig) (string,
 // terminal outlives ClaudePanel. It never Wait()s. The child's working
 // directory is set when the configured dir exists, which also gives the `cmd`
 // preset its working directory without fragile cmd.exe quoting.
-func Launch(entry config.TerminalConfig, launcher config.LauncherConfig) error {
-	exe, args, err := build(entry, launcher)
+func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, sublabel string) error {
+	exe, args, err := build(entry, launcher, sublabel)
 	if err != nil {
 		return err
 	}

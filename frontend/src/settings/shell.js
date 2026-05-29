@@ -46,13 +46,13 @@ export function createShell(panels) {
   const bodyEl = root.querySelector('#modal-body');
   root.querySelector('#modal-close').addEventListener('click', closeWindow);
 
-  async function show(panelId) {
+  async function show(panelId, data) {
     const panel = panels[panelId] || panels[Object.keys(panels)[0]];
     if (!panel) return;
     titleEl.textContent = panel.title;
     bodyEl.innerHTML = '';
     try {
-      await panel.mount(bodyEl);
+      await panel.mount(bodyEl, data);
     } catch (err) {
       console.error(`Failed to mount panel "${panelId}":`, err);
     }

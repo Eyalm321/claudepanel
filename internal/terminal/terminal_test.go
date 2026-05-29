@@ -113,7 +113,7 @@ func TestBuildCustom(t *testing.T) {
 		Exe:    "myterm",
 		Args:   []string{"--title", "{title}", "--cd", "{dir}", "--", "{cmd}"},
 	}
-	exe, args, err := build(entry, launcher)
+	exe, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,10 +126,28 @@ func TestBuildCustom(t *testing.T) {
 	}
 }
 
+func TestBuildSublabelInTitle(t *testing.T) {
+	entry := config.TerminalConfig{Name: "CRM", Color: "#3B82F6", Dir: "/tmp/x"}
+	launcher := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{title}"}}
+	// Sublabel is appended after the name, inside the dot-prefixed title.
+	_, args, err := build(entry, launcher, "backend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined(args) != "🔵 CRM · backend" {
+		t.Errorf("sublabel title = %v, want \"🔵 CRM · backend\"", args)
+	}
+	// Whitespace-only sublabel is treated as none.
+	_, a2, _ := build(entry, launcher, "   ")
+	if joined(a2) != "🔵 CRM" {
+		t.Errorf("blank sublabel must not add a separator: %v", a2)
+	}
+}
+
 func TestBuildCustomDefaultCommand(t *testing.T) {
 	entry := config.TerminalConfig{Name: "X", Dir: "/tmp"}
 	launcher := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{cmd}"}}
-	_, args, err := build(entry, launcher)
+	_, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +157,7 @@ func TestBuildCustomDefaultCommand(t *testing.T) {
 	// No color → no emoji dot prepended to the title.
 	entry2 := config.TerminalConfig{Name: "Y", Dir: "/tmp"}
 	l2 := config.LauncherConfig{Preset: "custom", Exe: "t", Args: []string{"{title}"}}
-	_, a2, _ := build(entry2, l2)
+	_, a2, _ := build(entry2, l2, "")
 	if joined(a2) != "Y" {
 		t.Errorf("uncolored title should be bare name: %v", a2)
 	}
@@ -153,7 +171,7 @@ func TestBuildWindowsTerminal(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "#3B82F6", Dir: "/tmp/proj"}
 	launcher := config.LauncherConfig{Preset: "windows-terminal"}
-	exe, args, err := build(entry, launcher)
+	exe, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +201,7 @@ func TestBuildWindowsTerminalEmptyColorBareTitle(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "", Dir: "/tmp/proj"}
 	launcher := config.LauncherConfig{Preset: "windows-terminal"}
-	_, args, err := build(entry, launcher)
+	_, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +223,7 @@ func TestBuildPowershellQuotesData(t *testing.T) {
 	// inert data, never executed.
 	entry := config.TerminalConfig{Name: "a'b", Color: "#FF0000", Dir: "/tmp/x"}
 	launcher := config.LauncherConfig{Preset: "powershell"}
-	exe, args, err := build(entry, launcher)
+	exe, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +251,7 @@ func TestBuildCmd(t *testing.T) {
 	}
 	entry := config.TerminalConfig{Name: "CRM", Color: "#00FF00", Dir: "/tmp/x"}
 	launcher := config.LauncherConfig{Preset: "cmd"}
-	exe, args, err := build(entry, launcher)
+	exe, args, err := build(entry, launcher, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +265,7 @@ func TestBuildCmd(t *testing.T) {
 }
 
 func TestBuildUnknownPreset(t *testing.T) {
-	_, _, err := build(config.TerminalConfig{Name: "X"}, config.LauncherConfig{Preset: "nope"})
+	_, _, err := build(config.TerminalConfig{Name: "X"}, config.LauncherConfig{Preset: "nope"}, "")
 	if err == nil {
 		t.Errorf("expected error for unknown preset")
 	}

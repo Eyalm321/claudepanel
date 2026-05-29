@@ -109,12 +109,27 @@ export function ListTerminalPresets() {
 /**
  * OpenTerminal launches the configured launcher entry at index in a new,
  * visible terminal window. The launcher program is resolved lazily on first
- * use (no terminal detection happens in config.Defaults) and persisted.
+ * use (no terminal detection happens in config.Defaults) and persisted. sublabel
+ * is an optional per-launch suffix appended to the tab title ("CRM · backend")
+ * so several terminals from one entry can be told apart; "" for a plain open.
+ * @param {number} index
+ * @param {string} sublabel
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenTerminal(index, sublabel) {
+    return $Call.ByID(2247958725, index, sublabel);
+}
+
+/**
+ * OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — a
+ * sublabel textbox for entry index. It's the Shift-click path from the bar; the
+ * panel then calls OpenTerminal(index, sublabel). Plain click skips this and
+ * opens directly.
  * @param {number} index
  * @returns {$CancellablePromise<void>}
  */
-export function OpenTerminal(index) {
-    return $Call.ByID(2247958725, index);
+export function OpenTerminalPrompt(index) {
+    return $Call.ByID(2877315675, index);
 }
 
 /**
