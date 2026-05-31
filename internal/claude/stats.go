@@ -223,8 +223,14 @@ func computeStatus(sessions []SessionFile, now time.Time) string {
 	for _, s := range sessions {
 		age := nowMs - s.UpdatedAt
 		// Any non-idle status updated in the last 5 minutes = actively working
-		if s.Status != "idle" && age < 5*60*1000 {
-			return "BUSY"
+		if s.Status != "idle" {
+			if age < 5*60*1000 {
+				return "BUSY"
+			}
+			// If older than 5 minutes, but the process PID is still alive on the OS, it is still working!
+			if s.PID > 0 && isPidRunning(s.PID) {
+				return "BUSY"
+			}
 		}
 	}
 	// Any session updated in the last 60 minutes = someone has Claude open
