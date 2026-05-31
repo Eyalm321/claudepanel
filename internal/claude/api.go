@@ -40,7 +40,7 @@ type rateLimitsFile struct {
 // ReadUsage loads rate-limit data captured by the statusline wrapper.
 // Returns nil if the file is missing or stale (>2h old, meaning Claude
 // Code hasn't been used recently and the data isn't representative).
-func ReadUsage(accountPath string) *APIUsage {
+func readUsage(accountPath string) *APIUsage {
 	data, err := os.ReadFile(filepath.Join(accountPath, "rate_limits.json"))
 	if err != nil {
 		return nil

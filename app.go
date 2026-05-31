@@ -719,18 +719,7 @@ func (a *App) GetBarData() (*claude.BarData, error) {
 
 	acc := a.cfg.Accounts[activeIdx]
 
-	sc, _ := claude.ReadStatsCache(acc.Path)
-	creds, _ := claude.ReadCredentials(acc.Path)
-	sessions := claude.ReadSessions(acc.Path)
-	notifs := claude.ReadNotifications(acc.Path)
-
-	apiUsage := claude.ReadUsage(acc.Path)
-
-	return claude.ComputeBarData(
-		acc.Name,
-		sc, creds, sessions, notifs,
-		apiUsage,
-	), nil
+	return claude.LoadBarData(acc.Path, acc.Name)
 }
 
 func (a *App) GetConfig() config.Config {

@@ -30,17 +30,19 @@ type BarData struct {
 	LastUpdated      int64   `json:"lastUpdated"` // unix ms
 }
 
-// ComputeBarData derives all display metrics from raw file data.
+// computeBarData derives all display metrics from raw file data.
 // apiUsage may be nil if the live API fetch failed; local data is used as fallback.
-func ComputeBarData(
+// now is injected so the computation is deterministic under test; production
+// callers pass time.Now() (see LoadBarData).
+func computeBarData(
 	accountName string,
 	sc *StatsCache,
 	creds *Credentials,
 	sessions []SessionFile,
 	notifs *NotificationStates,
 	apiUsage *APIUsage,
+	now time.Time,
 ) *BarData {
-	now := time.Now()
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	periodStartStr := periodStart.Format("2006-01-02")
 	todayStr := now.Format("2006-01-02")
@@ -99,7 +101,7 @@ func ComputeBarData(
 	} else {
 		primaryModel = computePrimaryModel(sc, periodStartStr)
 	}
-	status := computeStatus(sessions)
+	status := computeStatus(sessions, now)
 
 	// Trust the live rate-limit data when it's available: apiUsage.LimitExceeded
 	// is recomputed each read from rate_limits.json's WeeklyPercent so it
@@ -216,8 +218,8 @@ func shortModelName(full string) string {
 
 // computeStatus derives BUSY/IDLE/OFFLINE from session file freshness.
 // Real session statuses seen: "busy" (processing), "idle" (open but waiting).
-func computeStatus(sessions []SessionFile) string {
-	nowMs := time.Now().UnixMilli()
+func computeStatus(sessions []SessionFile, now time.Time) string {
+	nowMs := now.UnixMilli()
 	for _, s := range sessions {
 		age := nowMs - s.UpdatedAt
 		// Any non-idle status updated in the last 5 minutes = actively working

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func ReadStatsCache(accountPath string) (*StatsCache, error) {
+func readStatsCache(accountPath string) (*StatsCache, error) {
 	data, err := os.ReadFile(filepath.Join(accountPath, "stats-cache.json"))
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func ReadStatsCache(accountPath string) (*StatsCache, error) {
 	return &sc, nil
 }
 
-func ReadCredentials(accountPath string) (*Credentials, error) {
+func readCredentials(accountPath string) (*Credentials, error) {
 	data, err := os.ReadFile(filepath.Join(accountPath, ".credentials.json"))
 	if err != nil {
 		return nil, err
@@ -31,7 +31,7 @@ func ReadCredentials(accountPath string) (*Credentials, error) {
 	return &creds, nil
 }
 
-func ReadSessions(accountPath string) []SessionFile {
+func readSessions(accountPath string) []SessionFile {
 	sessionsDir := filepath.Join(accountPath, "sessions")
 	entries, err := os.ReadDir(sessionsDir)
 	if err != nil {
@@ -55,7 +55,7 @@ func ReadSessions(accountPath string) []SessionFile {
 	return sessions
 }
 
-func ReadNotifications(accountPath string) *NotificationStates {
+func readNotifications(accountPath string) *NotificationStates {
 	data, err := os.ReadFile(filepath.Join(accountPath, "config", "notification_states.json"))
 	if err != nil {
 		return nil
