@@ -1,0 +1,30 @@
+package claude
+
+import "time"
+
+// LoadBarData turns a single Claude account directory into the display payload
+// shown on the bar. It is the one public entry point of this package: it reads
+// the five per-account files (stats cache, credentials, sessions, notification
+// states, captured rate limits) and runs the pure computation over them. The
+// individual readers and the compute step are package internals — callers point
+// LoadBarData at an account path and get back a *BarData.
+//
+// Missing or unreadable files are tolerated: each reader falls back to nil and
+// the computation degrades gracefully (this mirrors the previous behaviour, in
+// which read errors were ignored). The error return is reserved for future
+// hard-failure cases; today LoadBarData always succeeds.
+func LoadBarData(accountPath, accountName string) (*BarData, error) {
+	return loadBarDataAt(accountPath, accountName, time.Now())
+}
+
+// loadBarDataAt is the testable core of LoadBarData with the clock injected, so
+// fixtures can be asserted deterministically regardless of when the test runs.
+func loadBarDataAt(accountPath, accountName string, now time.Time) (*BarData, error) {
+	sc, _ := readStatsCache(accountPath)
+	creds, _ := readCredentials(accountPath)
+	sessions := readSessions(accountPath)
+	notifs := readNotifications(accountPath)
+	apiUsage := readUsage(accountPath)
+
+	return computeBarData(accountName, sc, creds, sessions, notifs, apiUsage, now), nil
+}
