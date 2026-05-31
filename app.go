@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -75,6 +76,10 @@ type App struct {
 	//                        WindowLostFocus during the show/focus transition
 	menuHiddenAt time.Time // when it was last hidden, so a toggle click can tell
 	//                        a self-inflicted auto-hide from a fresh open request
+
+	// updateWindow is the reusable popup updater dialog overlay.
+	updateWindow     *application.WebviewWindow
+	lastUpdateResult UpdateCheckResult
 
 	// revealCtrl owns the slide animation + click-through behind the WindowOps
 	// seam. The hover watcher below decides *when* to reveal/collapse and drives
@@ -450,6 +455,8 @@ type UpdateCheckResult struct {
 	Latest          string `json:"latest"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	URL             string `json:"url"`
+	Changelog       string `json:"changelog"`
+	DownloadURL     string `json:"downloadUrl"`
 	Error           string `json:"error"`
 }
 
@@ -460,8 +467,7 @@ const (
 
 // CheckForUpdates queries the latest GitHub release and compares its tag to the
 // running version. Network/parse failures come back in Error rather than as a Go
-// error so the menu can always show a friendly line. A "dev" build never reports
-// an update available (it has no release to compare against).
+// error so the menu can always show a friendly line.
 func (a *App) CheckForUpdates() UpdateCheckResult {
 	res := UpdateCheckResult{Current: Version, URL: releasesPageURL}
 
@@ -488,6 +494,11 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 	var payload struct {
 		TagName string `json:"tag_name"`
 		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		res.Error = "unexpected response"
@@ -496,10 +507,143 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 	if payload.HTMLURL != "" {
 		res.URL = payload.HTMLURL
 	}
+	res.Changelog = payload.Body
+
+	// Find Windows Setup installer asset
+	for _, asset := range payload.Assets {
+		lowerName := strings.ToLower(asset.Name)
+		if strings.Contains(lowerName, "windows") && strings.HasSuffix(lowerName, ".exe") {
+			res.DownloadURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	// Fallback to first .exe asset if windows is not explicitly in the name
+	if res.DownloadURL == "" {
+		for _, asset := range payload.Assets {
+			if strings.HasSuffix(strings.ToLower(asset.Name), ".exe") {
+				res.DownloadURL = asset.BrowserDownloadURL
+				break
+			}
+		}
+	}
+
 	res.Latest = strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
 	cur := strings.TrimPrefix(strings.TrimSpace(Version), "v")
 	res.UpdateAvailable = res.Latest != "" && (cur == "dev" || res.Latest != cur)
+
+	a.lastUpdateResult = res
+	if res.UpdateAvailable {
+		go a.OpenUpdateWindow()
+	}
+
 	return res
+}
+
+func (a *App) GetLastUpdateResult() UpdateCheckResult {
+	return a.lastUpdateResult
+}
+
+func (a *App) OpenUpdateWindow() {
+	if a.app == nil {
+		return
+	}
+	if a.updateWindow == nil {
+		a.updateWindow = a.app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:             "update",
+			Title:            "System Update",
+			Width:            520,
+			Height:           380,
+			MinWidth:         400,
+			MinHeight:        280,
+			Frameless:        true,
+			AlwaysOnTop:      true,
+			DisableResize:    true,
+			Hidden:           true,
+			BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
+			URL:              "/update.html",
+		})
+	}
+	a.updateWindow.Show()
+	a.updateWindow.Center()
+	a.updateWindow.Focus()
+}
+
+type progressWriter struct {
+	total      int64
+	downloaded int64
+	onProgress func(percent float64, downloadedMB float64, totalMB float64)
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	pw.downloaded += int64(n)
+
+	var pct float64
+	if pw.total > 0 {
+		pct = float64(pw.downloaded) / float64(pw.total) * 100.0
+	}
+
+	pw.onProgress(pct, float64(pw.downloaded)/(1024*1024), float64(pw.total)/(1024*1024))
+	return n, nil
+}
+
+func (a *App) InstallUpdate(downloadURL string) error {
+	log.Printf("[Updater] Starting seamless update download from: %s", downloadURL)
+
+	tempDir := os.TempDir()
+	tempInstallerPath := filepath.Join(tempDir, "ClaudePanel-setup-temp.exe")
+
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned status: %d", resp.StatusCode)
+	}
+
+	totalSize := resp.ContentLength
+
+	out, err := os.Create(tempInstallerPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer out.Close()
+
+	pw := &progressWriter{
+		total: totalSize,
+		onProgress: func(percent float64, downloadedMB float64, totalMB float64) {
+			a.app.Event.Emit("update:progress", map[string]interface{}{
+				"percent":    percent,
+				"downloaded": downloadedMB,
+				"total":      totalMB,
+			})
+		},
+	}
+
+	// Copy resp.Body through both progressWriter and the file
+	_, err = io.Copy(out, io.TeeReader(resp.Body, pw))
+	if err != nil {
+		return fmt.Errorf("failed to save download: %w", err)
+	}
+	out.Close()
+
+	log.Printf("[Updater] Download complete. Spawning silent background updater...")
+
+	appPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	err = runSilentInstaller(tempInstallerPath, appPath)
+	if err != nil {
+		return fmt.Errorf("failed to run silent installer: %w", err)
+	}
+
+	log.Printf("[Updater] Background updater started. Exiting application...")
+	os.Exit(0)
+	return nil
 }
 
 // ── Wails-exported bindings ──────────────────────────────────────────────────

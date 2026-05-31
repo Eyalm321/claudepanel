@@ -32,7 +32,6 @@ async function onCheckUpdates() {
       setHint(res.error.toUpperCase(), 'is-error');
     } else if (res.updateAvailable) {
       setHint(`v${res.latest} AVAILABLE`, 'is-update');
-      try { await Browser.OpenURL(res.url); } catch (e) { console.error(e); }
     } else {
       item.classList.add('is-done'); // ✔ up to date (the checkmark says it all)
       setHint('');

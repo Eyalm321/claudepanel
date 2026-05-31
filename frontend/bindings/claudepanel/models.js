@@ -45,6 +45,20 @@ export class UpdateCheckResult {
              */
             this["url"] = "";
         }
+        if (!("changelog" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["changelog"] = "";
+        }
+        if (!("downloadUrl" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["downloadUrl"] = "";
+        }
         if (!("error" in $$source)) {
             /**
              * @member

@@ -15,6 +15,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         settings: resolve(__dirname, 'settings.html'),
         menu: resolve(__dirname, 'menu.html'),
+        update: resolve(__dirname, 'update.html'),
       },
       external: [
         '/wails/runtime.js',

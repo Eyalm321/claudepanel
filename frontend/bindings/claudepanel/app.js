@@ -26,8 +26,7 @@ import * as $models from "./models.js";
 /**
  * CheckForUpdates queries the latest GitHub release and compares its tag to the
  * running version. Network/parse failures come back in Error rather than as a Go
- * error so the menu can always show a friendly line. A "dev" build never reports
- * an update available (it has no release to compare against).
+ * error so the menu can always show a friendly line.
  * @returns {$CancellablePromise<$models.UpdateCheckResult>}
  */
 export function CheckForUpdates() {
@@ -75,6 +74,15 @@ export function GetConfig() {
 }
 
 /**
+ * @returns {$CancellablePromise<$models.UpdateCheckResult>}
+ */
+export function GetLastUpdateResult() {
+    return $Call.ByID(2159480791).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<platform$0.MonitorInfo[]>}
  */
 export function GetMonitors() {
@@ -98,6 +106,14 @@ export function GetPushdownStats() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377);
+}
+
+/**
+ * @param {string} downloadURL
+ * @returns {$CancellablePromise<void>}
+ */
+export function InstallUpdate(downloadURL) {
+    return $Call.ByID(2443992793, downloadURL);
 }
 
 /**
@@ -161,6 +177,13 @@ export function OpenTerminalAs(index, accountIndex, sublabel) {
  */
 export function OpenTerminalPrompt(index) {
     return $Call.ByID(2877315675, index);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenUpdateWindow() {
+    return $Call.ByID(1491903660);
 }
 
 /**
