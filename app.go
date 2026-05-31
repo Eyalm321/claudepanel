@@ -241,6 +241,8 @@ func (a *App) domReady(app *application.App, window *application.WebviewWindow) 
 	// The reveal controller owns the cursor poll loop and the whole auto-hide
 	// state machine now; App just starts it.
 	go a.revealCtrl.Run(a.app.Context())
+	// Start the Claude status watcher poller
+	go a.watchClaudeStatus(a.app.Context())
 }
 
 // reveal surfaces the bar, called when the user launches a second instance (which
@@ -809,4 +811,43 @@ func (a *App) PickDirectory() (string, error) {
 		dlg.AttachToWindow(a.window)
 	}
 	return dlg.PromptForSingleSelection()
+}
+
+func (a *App) watchClaudeStatus(ctx context.Context) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastStatus string
+	var lastPath string
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Read the active account config
+			a.audioMu.Lock()
+			cfg := a.cfg
+			a.audioMu.Unlock()
+
+			if cfg == nil || len(cfg.Accounts) == 0 {
+				continue
+			}
+
+			activeIdx := cfg.ActiveAccount
+			if activeIdx < 0 || activeIdx >= len(cfg.Accounts) {
+				activeIdx = 0
+			}
+			acc := cfg.Accounts[activeIdx]
+
+			status := claude.GetStatus(acc.Path)
+			if status != lastStatus || acc.Path != lastPath {
+				lastStatus = status
+				lastPath = acc.Path
+				if a.app != nil {
+					a.app.Event.Emit("claude:status", status)
+				}
+			}
+		}
+	}
 }

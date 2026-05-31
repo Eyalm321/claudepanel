@@ -47,6 +47,11 @@ func (c *Controller) handlePlayerEvent(ev Event) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Suppress duplicate idle/unaltered state transitions to avoid log/event spam
+	if ev.State == c.currentState && ev.Err == "" {
+		return
+	}
+
 	log.Printf("[audio] Player event received: State=%s, Err=%s", ev.State, ev.Err)
 
 	if ev.State == StateError {
@@ -113,6 +118,7 @@ func (c *Controller) PlayVideo(ctx context.Context, videoID string) error {
 	}
 
 	c.activeVideoID = videoID
+	c.currentState = StateLoading
 	c.retried = false
 	c.emit(Event{State: StateLoading, VideoID: videoID})
 
@@ -147,6 +153,7 @@ func (c *Controller) Stop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.activeVideoID = ""
+	c.currentState = StateIdle
 	return c.player.Stop()
 }
 

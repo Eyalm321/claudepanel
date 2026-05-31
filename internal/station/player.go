@@ -113,7 +113,7 @@ func (s *StationPlayer) Play(stationIdx int) error {
 	s.mu.Unlock()
 
 	// Loading feedback while the (possibly playlist-backed) queue is built.
-	s.forward(audio.Event{State: audio.StateLoading})
+	s.forward(audio.Event{State: audio.StateLoading, StationIdx: stationIdx})
 	go s.buildAndStart(epoch, station, ctx)
 	return nil
 }
@@ -173,8 +173,9 @@ func (s *StationPlayer) buildAndStart(epoch uint64, station config.StationConfig
 		return
 	}
 	if len(s.queue) == 0 {
+		activeIdx := s.activeIdx
 		s.mu.Unlock()
-		s.forward(audio.Event{State: audio.StateError, Err: "station has no playable items"})
+		s.forward(audio.Event{State: audio.StateError, StationIdx: activeIdx, Err: "station has no playable items"})
 		return
 	}
 	if station.Shuffle && !started {

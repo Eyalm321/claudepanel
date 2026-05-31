@@ -50,6 +50,7 @@ while ($line = [Console]::ReadLine()) {
     try {
         if ($line -like "play *") {
             $url = $line.Substring(5)
+            Write-Host "PLAY_URL_LEN: $($url.Length)"
             $script:endedReported = $false
             $uri = New-Object System.Uri($url)
             $source = [Windows.Media.Core.MediaSource]::CreateFromUri($uri)
@@ -129,6 +130,8 @@ func (p *WindowsPlayer) readStdout(r io.Reader) {
 		} else if strings.HasPrefix(line, "ERROR:") {
 			errStr := strings.TrimPrefix(line, "ERROR:")
 			p.emit(Event{State: StateError, Err: errStr})
+		} else {
+			log.Printf("[Player stdout] %s", line)
 		}
 	}
 }

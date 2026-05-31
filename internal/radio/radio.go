@@ -10,6 +10,11 @@ package radio
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -47,35 +52,104 @@ type Resolver struct {
 	mu            sync.Mutex
 	cache         map[string]trackEntry
 	playlistCache map[string]playlistEntry
+	port          int
 }
 
 func New() *Resolver {
-	return &Resolver{
+	r := &Resolver{
 		cache:         map[string]trackEntry{},
 		playlistCache: map[string]playlistEntry{},
 	}
+
+	// Start local proxy server to stream YouTube VODs safely (bypasses 403 Forbidden).
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err == nil {
+		r.port = listener.Addr().(*net.TCPAddr).Port
+		go func() {
+			_ = http.Serve(listener, r)
+		}()
+	}
+
+	return r
 }
 
-// Resolve returns a playable stream URL for the given YouTube video ID. If the
-// video is a live broadcast it returns the HLS manifest URL (IsLive=true);
-// otherwise it returns a deciphered, audio-only direct URL (preferring
-// audio/mp4 / itag 140 AAC, which plays in all three native backends).
-//
-// Results are cached for cacheTTL per video ID; pass forceRefresh=true to skip
-// the cache (used when the player reports an error that may indicate a stale
-// signed URL).
-func (r *Resolver) Resolve(ctx context.Context, videoID string, forceRefresh bool) (ResolvedTrack, error) {
+func (r *Resolver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	videoID := req.URL.Query().Get("id")
+	log.Printf("[Proxy] Incoming request for video ID: %s, Range: %q", videoID, req.Header.Get("Range"))
+	if videoID == "" {
+		http.Error(w, "missing video id", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve the direct googlevideo URL (cached or fresh)
+	track, err := r.resolveDirect(req.Context(), videoID, false)
+	if err != nil {
+		log.Printf("[Proxy] resolveDirect failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Create request to the direct URL
+	proxyReq, err := http.NewRequestWithContext(req.Context(), "GET", track.URL, nil)
+	if err != nil {
+		log.Printf("[Proxy] NewRequestWithContext failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Copy incoming Range headers to support seeking/buffering
+	if rangeHeader := req.Header.Get("Range"); rangeHeader != "" {
+		proxyReq.Header.Set("Range", rangeHeader)
+	}
+
+	// Perform the request to Google Video CDN
+	resp, err := http.DefaultClient.Do(proxyReq)
+	if err != nil {
+		log.Printf("[Proxy] Direct GET failed: %v", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	log.Printf("[Proxy] googlevideo responded with status: %d, Content-Length: %s, Content-Range: %q",
+		resp.StatusCode, resp.Header.Get("Content-Length"), resp.Header.Get("Content-Range"))
+
+	// Copy relevant headers back to the player client
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+		w.Header().Set("Content-Length", contentLength)
+	}
+	if contentRange := resp.Header.Get("Content-Range"); contentRange != "" {
+		w.Header().Set("Content-Range", contentRange)
+	}
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	w.WriteHeader(resp.StatusCode)
+
+	n, copyErr := io.Copy(w, resp.Body)
+	if copyErr != nil {
+		log.Printf("[Proxy] Copy error (sent %d bytes): %v", n, copyErr)
+	} else {
+		log.Printf("[Proxy] Successfully proxied %d bytes", n)
+	}
+}
+
+// resolveDirect resolves the actual underlying stream URL (either HLS manifest or direct googlevideo URL).
+func (r *Resolver) resolveDirect(ctx context.Context, videoID string, forceRefresh bool) (ResolvedTrack, error) {
 	videoID = strings.TrimSpace(videoID)
 	if videoID == "" {
 		return ResolvedTrack{}, fmt.Errorf("radio: empty video id")
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if !forceRefresh {
 		if entry, ok := r.cache[videoID]; ok && entry.track.URL != "" && time.Since(entry.at) < cacheTTL {
+			r.mu.Unlock()
 			return entry.track, nil
 		}
 	}
+	r.mu.Unlock()
 
 	video, err := r.client.GetVideoContext(ctx, videoID)
 	if err != nil {
@@ -85,7 +159,9 @@ func (r *Resolver) Resolve(ctx context.Context, videoID string, forceRefresh boo
 	// Livestream: HLS manifest is the playable URL and never expires by EOS.
 	if video.HLSManifestURL != "" {
 		track := ResolvedTrack{URL: video.HLSManifestURL, IsLive: true}
+		r.mu.Lock()
 		r.cache[videoID] = trackEntry{track: track, at: time.Now()}
+		r.mu.Unlock()
 		return track, nil
 	}
 
@@ -99,8 +175,32 @@ func (r *Resolver) Resolve(ctx context.Context, videoID string, forceRefresh boo
 		return ResolvedTrack{}, fmt.Errorf("youtube: stream url for %s: %w", videoID, err)
 	}
 	track := ResolvedTrack{URL: url, IsLive: false}
+	r.mu.Lock()
 	r.cache[videoID] = trackEntry{track: track, at: time.Now()}
+	r.mu.Unlock()
 	return track, nil
+}
+
+// Resolve returns the player-facing URL. For livestreams, this is the direct HLS manifest;
+// for VODs, this is our local proxy URL that forwards requests to avoid 403 Forbidden.
+func (r *Resolver) Resolve(ctx context.Context, videoID string, forceRefresh bool) (ResolvedTrack, error) {
+	// First resolve the direct track info so we know if it's a livestream
+	track, err := r.resolveDirect(ctx, videoID, forceRefresh)
+	if err != nil {
+		return ResolvedTrack{}, err
+	}
+
+	// If it's a livestream or proxy port is not set, play it directly
+	if track.IsLive || r.port == 0 {
+		return track, nil
+	}
+
+	// For VODs, route through our local HTTP proxy
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d/stream?id=%s", r.port, url.QueryEscape(videoID))
+	return ResolvedTrack{
+		URL:    proxyURL,
+		IsLive: false,
+	}, nil
 }
 
 // pickAudioFormat selects the best audio-only format: audio/mp4 (itag 140 AAC)

@@ -247,8 +247,8 @@ export function SetActiveStation(index) {
 /**
  * SetEditorOpen forces the bar fully expanded while the inline accounts editor
  * is shown (the editor is launched from the tray with the cursor off-bar, and
- * must stay open until dismissed). On close, the hover-watcher re-evaluates
- * based on the current cursor position.
+ * must stay open until dismissed). On close, the controller re-evaluates based
+ * on the current cursor position.
  * @param {boolean} open
  * @returns {$CancellablePromise<void>}
  */

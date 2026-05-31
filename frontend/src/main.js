@@ -256,6 +256,7 @@ async function init() {
     Events.On('config:changed', onConfigChanged);
     Events.On('account:changed', refresh);
     Events.On('monitor:changed', updateMonitorDisplay);
+    Events.On('claude:status', refresh);
     // Auto-hide slide animation is driven from Go (window position);
     // no JS-side animation state to manage.
 

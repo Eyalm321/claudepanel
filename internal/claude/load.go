@@ -28,3 +28,9 @@ func loadBarDataAt(accountPath, accountName string, now time.Time) (*BarData, er
 
 	return computeBarData(accountName, sc, creds, sessions, notifs, apiUsage, now), nil
 }
+
+// GetStatus returns the computed active status for the account path.
+func GetStatus(accountPath string) string {
+	sessions := readSessions(accountPath)
+	return computeStatus(sessions, time.Now())
+}
