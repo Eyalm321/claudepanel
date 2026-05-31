@@ -465,11 +465,78 @@ const (
 	releasesPageURL = "https://github.com/Eyalm321/claudepanel/releases/latest"
 )
 
+func isNewerVersion(latest, current string) bool {
+	if current == "dev" {
+		return true
+	}
+	if latest == "" {
+		return false
+	}
+	if latest == current {
+		return false
+	}
+
+	parseComponents := func(v string) []string {
+		v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+		v = strings.ReplaceAll(v, "-", ".")
+		return strings.Split(v, ".")
+	}
+
+	latestParts := parseComponents(latest)
+	currentParts := parseComponents(current)
+
+	for i := 0; i < len(latestParts) && i < len(currentParts); i++ {
+		lPart := latestParts[i]
+		cPart := currentParts[i]
+
+		if lPart == cPart {
+			continue
+		}
+
+		var lNum, cNum int
+		lIsNum := false
+		cIsNum := false
+
+		if _, err := fmt.Sscanf(lPart, "%d", &lNum); err == nil {
+			lIsNum = true
+		}
+		if _, err := fmt.Sscanf(cPart, "%d", &cNum); err == nil {
+			cIsNum = true
+		}
+
+		if lIsNum && cIsNum {
+			if lNum != cNum {
+				return lNum > cNum
+			}
+		} else {
+			var lRc, cRc int
+			lIsRc := false
+			cIsRc := false
+			if _, err := fmt.Sscanf(strings.TrimPrefix(lPart, "rc"), "%d", &lRc); err == nil {
+				lIsRc = true
+			}
+			if _, err := fmt.Sscanf(strings.TrimPrefix(cPart, "rc"), "%d", &cRc); err == nil {
+				cIsRc = true
+			}
+
+			if lIsRc && cIsRc {
+				if lRc != cRc {
+					return lRc > cRc
+				}
+			} else {
+				return lPart > cPart
+			}
+		}
+	}
+
+	return len(latestParts) > len(currentParts)
+}
+
 // CheckForUpdates queries the latest GitHub release and compares its tag to the
 // running version. Network/parse failures come back in Error rather than as a Go
 // error so the menu can always show a friendly line.
 func (a *App) CheckForUpdates() UpdateCheckResult {
-	res := UpdateCheckResult{Current: Version, URL: releasesPageURL}
+	res := UpdateCheckResult{Current: strings.TrimPrefix(strings.TrimSpace(Version), "v"), URL: releasesPageURL}
 
 	req, err := http.NewRequest(http.MethodGet, releasesAPIURL, nil)
 	if err != nil {
@@ -487,13 +554,12 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		res.Error = fmt.Sprintf("GitHub returned %d", resp.StatusCode)
+		res.Error = fmt.Sprintf("server returned status: %d", resp.StatusCode)
 		return res
 	}
 
 	var payload struct {
 		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
 		Body    string `json:"body"`
 		Assets  []struct {
 			Name               string `json:"name"`
@@ -501,12 +567,10 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		res.Error = "unexpected response"
+		res.Error = "failed to parse server response"
 		return res
 	}
-	if payload.HTMLURL != "" {
-		res.URL = payload.HTMLURL
-	}
+
 	res.Changelog = payload.Body
 
 	// Find Windows Setup installer asset
@@ -529,7 +593,7 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 
 	res.Latest = strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
 	cur := strings.TrimPrefix(strings.TrimSpace(Version), "v")
-	res.UpdateAvailable = res.Latest != "" && (cur == "dev" || res.Latest != cur)
+	res.UpdateAvailable = isNewerVersion(res.Latest, cur)
 
 	a.lastUpdateResult = res
 	if res.UpdateAvailable {
