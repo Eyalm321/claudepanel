@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf16"
 
@@ -51,6 +52,7 @@ type Preset struct {
 	DirInShell bool     // `cd <dir>` inside the shell command (no working-dir flag)
 	Shell      string   // keep-open hint: "bash"/"sh" append `; exec bash`/`; exec sh`
 	EncodeCmd  bool     // base64-encode {cmd} for pwsh -EncodedCommand (see build)
+	Console    bool     // console app (no own window) needing a real console on launch
 	Quote      quoteMode
 }
 
@@ -203,6 +205,10 @@ func composeShellCmd(cmd, shell string, needsOSC, dirInShell bool, dir, title, c
 	if configDir != "" {
 		out = envAssign(shell, "CLAUDE_CONFIG_DIR", configDir) + out
 	}
+	// We always set the window title ourselves (the colored emoji-dot label), so
+	// tell Claude Code to leave it alone — otherwise it rewrites the title once it
+	// starts, clobbering ours. Prepended last so it's the very first statement.
+	out = envAssign(shell, "CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1") + out
 	return out
 }
 
@@ -394,6 +400,19 @@ func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts La
 								_ = os.Remove(backupPath)
 							}
 						}
+						// When Hyper is already running (single-instance), the new
+						// window's shell is spawned by the primary process from its
+						// in-memory config, which it only refreshes when its file
+						// watcher notices this write. Launch too soon and the window
+						// opens with the previously-loaded shell/env — e.g. after an
+						// account switch it still carries the old account (or the
+						// restored default with no CLAUDE_CONFIG_DIR, falling back to
+						// ~/.claude). Give the watcher time to reload before we open
+						// the window. (Cold start doesn't need this — Hyper reads the
+						// config at launch — so only wait when it's already up.)
+						if len(preExisting) > 0 {
+							time.Sleep(1 * time.Second)
+						}
 					}
 				}
 			}
@@ -407,6 +426,15 @@ func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts La
 		}
 		return err
 	}
+	// Console apps (PowerShell, cmd) need a real console on launch — see
+	// wrapConsoleLaunch. GUI presets (Hyper, Windows Terminal) pass through.
+	console := false
+	if p, perr := resolvePreset(launcher.Preset); perr == nil {
+		console = p.Console
+	}
+	var sysAttr *syscall.SysProcAttr
+	exe, args, sysAttr = wrapConsoleLaunch(exe, args, console)
+
 	cmd := exec.Command(exe, args...)
 	if dir := resolveDir(entry.Dir); dir != "" {
 		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
@@ -416,7 +444,7 @@ func Launch(entry config.TerminalConfig, launcher config.LauncherConfig, opts La
 	if cfgDir := expandHome(strings.TrimSpace(opts.ConfigDir)); cfgDir != "" {
 		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+cfgDir)
 	}
-	cmd.SysProcAttr = detachAttrs()
+	cmd.SysProcAttr = sysAttr
 	if err := cmd.Start(); err != nil {
 		if hyperConfigRestore != nil {
 			hyperConfigRestore()

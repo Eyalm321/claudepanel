@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"claudepanel/internal/audio"
@@ -21,6 +24,7 @@ import (
 	"context"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // radioResolverAdapter bridges *radio.Resolver to the audio.StreamResolver
@@ -55,6 +59,16 @@ type App struct {
 	// and hidden (not destroyed) on close, so reopening is cheap.
 	settingsWindow *application.WebviewWindow
 
+	// menuWindow is the small dropdown anchored under the brand icon
+	// (Check for updates / Exit). Created lazily, hidden (not destroyed) on
+	// close, and auto-hidden when it loses focus.
+	menuWindow   *application.WebviewWindow
+	menuVisible  bool      // tracks whether the dropdown is currently shown
+	menuShownAt  time.Time // guards the focus-loss auto-hide against a spurious
+	//                        WindowLostFocus during the show/focus transition
+	menuHiddenAt time.Time // when it was last hidden, so a toggle click can tell
+	//                        a self-inflicted auto-hide from a fresh open request
+
 	// hover-watcher state
 	editorOpen  bool
 	barExpanded bool      // true = window on screen at mon.Top; false = above the top edge / hidden
@@ -86,6 +100,9 @@ func NewApp() *App {
 	// to start with the bar docked, even if they collapsed it last time.
 	cfg.Pinned = true
 	cfg.AppBarMode = true
+	// The bar is always fully opaque — no see-through. (Older configs may carry a
+	// translucent value like 0.92; override it.)
+	cfg.Opacity = 1.0
 	res := radio.New()
 	app := &App{cfg: cfg, radio: res}
 
@@ -469,6 +486,152 @@ func (a *App) openSettings(panel string, index int, name string) {
 
 func (a *App) Quit() {
 	a.app.Quit()
+}
+
+// ToggleBrandMenu opens the small dropdown anchored under the ClaudePanel brand
+// icon, or closes it if it's already open. Like the settings popup it's a
+// separate frameless window — the 28-px bar has no room to draw a menu and clips
+// its own overflow. Created lazily, hidden (not destroyed) on close, and
+// auto-hidden the moment it loses focus so clicking elsewhere dismisses it.
+//
+// The toggle has to survive a race: clicking the icon while the menu is open
+// first defocuses the menu (auto-hide) and only then delivers the click here, so
+// a plain "show if hidden" would always reopen. menuVisible answers "is it up
+// right now", and menuHiddenAt lets us recognise the auto-hide that this very
+// click just triggered and stay closed.
+func (a *App) ToggleBrandMenu() {
+	if a.app == nil {
+		return
+	}
+	if a.menuVisible {
+		a.hideBrandMenu()
+		return
+	}
+	// The click that brought us here may have just auto-closed the menu via focus
+	// loss; treat that as "toggle off" rather than immediately reopening.
+	if time.Since(a.menuHiddenAt) < 250*time.Millisecond {
+		return
+	}
+	if a.menuWindow == nil {
+		a.menuWindow = a.app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:             "brand-menu",
+			Title:            "",
+			Width:            188,
+			Height:           64,
+			Frameless:        true,
+			AlwaysOnTop:      true,
+			DisableResize:    true,
+			Hidden:           true,
+			BackgroundColour: application.NewRGB(0x0B, 0x0C, 0x0E),
+			URL:              "/menu.html",
+		})
+		a.menuWindow.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
+			// Ignore the transient focus loss that can fire while the window is
+			// still coming up; only a genuine click-away after it has settled
+			// should dismiss it.
+			if a.menuVisible && time.Since(a.menuShownAt) > 300*time.Millisecond {
+				a.hideBrandMenu()
+			}
+		})
+	}
+	a.menuShownAt = time.Now()
+	a.menuVisible = true
+	a.menuWindow.Show()
+	// Anchor just under the brand icon at the bar monitor's top-left. mon.Left/Top
+	// are physical pixels but SetPosition takes DIP (it scales to physical
+	// internally), so divide by the monitor's scale; the bar height is already in
+	// logical units.
+	if len(a.monitors) > 0 {
+		idx := a.cfg.Monitor
+		if idx < 0 || idx >= len(a.monitors) {
+			idx = 0
+		}
+		mon := a.monitors[idx]
+		scale := mon.DpiScale
+		if scale <= 0 {
+			scale = 1
+		}
+		x := int(float64(mon.Left)/scale) + 6
+		y := int(float64(mon.Top)/scale) + a.cfg.BarHeight
+		a.menuWindow.SetPosition(x, y)
+	}
+	a.menuWindow.Focus()
+}
+
+// hideBrandMenu hides the dropdown and records when, so a follow-up toggle click
+// can tell an auto-hide it caused from a fresh open request.
+func (a *App) hideBrandMenu() {
+	if a.menuWindow != nil {
+		a.menuWindow.Hide()
+	}
+	a.menuVisible = false
+	a.menuHiddenAt = time.Now()
+}
+
+// CloseBrandMenu hides the dropdown — called by the menu page after an action so
+// the window object is kept for an instant reopen.
+func (a *App) CloseBrandMenu() {
+	a.hideBrandMenu()
+}
+
+// UpdateCheckResult is returned to the brand menu's "Check for updates" item.
+// On failure Error carries a short message; otherwise the frontend compares
+// Current/Latest and opens URL when UpdateAvailable.
+type UpdateCheckResult struct {
+	Current         string `json:"current"`
+	Latest          string `json:"latest"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	URL             string `json:"url"`
+	Error           string `json:"error"`
+}
+
+const (
+	releasesAPIURL  = "https://api.github.com/repos/Eyalm321/claudepanel/releases/latest"
+	releasesPageURL = "https://github.com/Eyalm321/claudepanel/releases/latest"
+)
+
+// CheckForUpdates queries the latest GitHub release and compares its tag to the
+// running version. Network/parse failures come back in Error rather than as a Go
+// error so the menu can always show a friendly line. A "dev" build never reports
+// an update available (it has no release to compare against).
+func (a *App) CheckForUpdates() UpdateCheckResult {
+	res := UpdateCheckResult{Current: Version, URL: releasesPageURL}
+
+	req, err := http.NewRequest(http.MethodGet, releasesAPIURL, nil)
+	if err != nil {
+		res.Error = "could not build request"
+		return res
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "claudepanel")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		res.Error = "network unavailable"
+		return res
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		res.Error = fmt.Sprintf("GitHub returned %d", resp.StatusCode)
+		return res
+	}
+
+	var payload struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		res.Error = "unexpected response"
+		return res
+	}
+	if payload.HTMLURL != "" {
+		res.URL = payload.HTMLURL
+	}
+	res.Latest = strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
+	cur := strings.TrimPrefix(strings.TrimSpace(Version), "v")
+	res.UpdateAvailable = res.Latest != "" && cur != "dev" && res.Latest != cur
+	return res
 }
 
 // ── Wails-exported bindings ──────────────────────────────────────────────────

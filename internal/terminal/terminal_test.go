@@ -101,8 +101,8 @@ func TestComposeShellCmd(t *testing.T) {
 	// must be single-quoted (data, never executed).
 	got := composeShellCmd("claude", "bash", true, true, "/a'b", "🔵 X'Y", "")
 	wantCd := `cd '/a'\''b';`
-	if !strings.HasPrefix(got, wantCd) {
-		t.Errorf("missing/incorrect cd prefix: %q", got)
+	if !strings.Contains(got, wantCd) {
+		t.Errorf("missing/incorrect cd: %q", got)
 	}
 	if !strings.Contains(got, `printf '\033]0;%s\007' '🔵 X'\''Y'`) {
 		t.Errorf("missing/incorrect OSC injection: %q", got)
@@ -113,24 +113,29 @@ func TestComposeShellCmd(t *testing.T) {
 	if !strings.Contains(got, "claude") {
 		t.Errorf("missing command: %q", got)
 	}
+	// We always own the title, so Claude Code's title rewriting is disabled.
+	if !strings.HasPrefix(got, "export CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; ") {
+		t.Errorf("missing disable-title prefix: %q", got)
+	}
 
 	// No OSC, no cd, sh keep-open.
 	got = composeShellCmd("claude --resume", "sh", false, false, "/x", "T", "")
-	if got != "claude --resume; exec sh" {
+	if got != "export CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; claude --resume; exec sh" {
 		t.Errorf("plain sh compose = %q", got)
 	}
 
-	// CLAUDE_CONFIG_DIR export prepended, per-shell syntax, before the command.
+	// CLAUDE_CONFIG_DIR export prepended, per-shell syntax, before the command;
+	// the disable-title env precedes it.
 	bash := composeShellCmd("claude", "bash", false, false, "", "T", "/home/u/.acct")
-	if bash != "export CLAUDE_CONFIG_DIR='/home/u/.acct'; claude; exec bash" {
+	if bash != "export CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; export CLAUDE_CONFIG_DIR='/home/u/.acct'; claude; exec bash" {
 		t.Errorf("bash env compose = %q", bash)
 	}
 	pwsh := composeShellCmd("claude", "pwsh", false, false, "", "T", `C:\a\.acct`)
-	if pwsh != `$env:CLAUDE_CONFIG_DIR='C:\a\.acct'; claude` {
+	if pwsh != `$env:CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; $env:CLAUDE_CONFIG_DIR='C:\a\.acct'; claude` {
 		t.Errorf("pwsh env compose = %q", pwsh)
 	}
 	cmd := composeShellCmd("claude", "cmd", false, false, "", "T", `C:\a\.acct`)
-	if cmd != `set CLAUDE_CONFIG_DIR=C:\a\.acct&claude` {
+	if cmd != `set CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1&set CLAUDE_CONFIG_DIR=C:\a\.acct&claude` {
 		t.Errorf("cmd env compose = %q", cmd)
 	}
 }
@@ -244,8 +249,8 @@ func TestBuildWindowsTerminal(t *testing.T) {
 	if ci < 0 || ci+1 >= len(args) {
 		t.Fatalf("no -EncodedCommand arg: %v", args)
 	}
-	if decodePwsh(args[ci+1]) != "claude" {
-		t.Errorf("decoded command = %q, want \"claude\"", decodePwsh(args[ci+1]))
+	if want := `$env:CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; claude`; decodePwsh(args[ci+1]) != want {
+		t.Errorf("decoded command = %q, want %q", decodePwsh(args[ci+1]), want)
 	}
 }
 
@@ -291,7 +296,7 @@ func TestBuildWindowsTerminalEncodesEnvCommand(t *testing.T) {
 	if ci < 0 || ci+1 >= len(args) {
 		t.Fatalf("no -EncodedCommand arg: %v", args)
 	}
-	want := `$env:CLAUDE_CONFIG_DIR='C:\Users\Admin\.claude'; claude`
+	want := `$env:CLAUDE_CODE_DISABLE_TERMINAL_TITLE='1'; $env:CLAUDE_CONFIG_DIR='C:\Users\Admin\.claude'; claude`
 	if got := decodePwsh(args[ci+1]); got != want {
 		t.Errorf("decoded command = %q, want %q", got, want)
 	}
@@ -347,7 +352,7 @@ func TestBuildCmd(t *testing.T) {
 	if exe != "cmd.exe" {
 		t.Errorf("exe = %q", exe)
 	}
-	want := []string{"/k", "title 🟢 CRM&claude"}
+	want := []string{"/k", "title 🟢 CRM&set CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1&claude"}
 	if joined(args) != joined(want) {
 		t.Errorf("cmd args = %v, want %v", args, want)
 	}

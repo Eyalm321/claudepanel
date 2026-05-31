@@ -4,7 +4,7 @@ import {
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
   SaveConfig, SetPinned,
   RadioPlayStation, RadioPause, RadioSetVolume, SetActiveStation,
-  OpenTerminal, OpenTerminalPrompt
+  OpenTerminal, OpenTerminalPrompt, ToggleBrandMenu
 } from '../bindings/claudepanel/app.js';
 import { Events } from '@wailsio/runtime';
 
@@ -306,6 +306,14 @@ async function togglePin() {
 }
 
 document.getElementById('seg-pin').addEventListener('click', togglePin);
+
+// ── Brand menu ────────────────────────────────────────────────────────────────
+// Clicking the ClaudePanel logo toggles a small dropdown window (Check for
+// updates / Exit) anchored beneath the icon. The window is created and positioned
+// by Go and auto-hides when it loses focus; the bar only triggers the toggle.
+document.getElementById('seg-brand').addEventListener('click', async () => {
+  try { await ToggleBrandMenu(); } catch (e) { console.error('toggle menu failed:', e); }
+});
 
 // ── Radio Player (background audio streaming) ────────────────────────────────
 // The Go backend manages native playback and emits state events via 'radio:state'.

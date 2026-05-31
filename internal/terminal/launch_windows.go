@@ -161,6 +161,7 @@ func builtinPresets() []Preset {
 				"$host.UI.RawUI.WindowTitle = {title}; Set-Location -LiteralPath {dir}; {cmd}"},
 			DotInTitle: true,
 			Shell:      "pwsh",
+			Console:    true,
 			Quote:      quotePwsh,
 		},
 		{
@@ -169,6 +170,7 @@ func builtinPresets() []Preset {
 			PreColor:   []string{"/k", "title {title}&{cmd}"},
 			DotInTitle: true,
 			Shell:      "cmd",
+			Console:    true,
 			Quote:      quoteNone,
 		},
 	}
@@ -188,6 +190,26 @@ func DetectDefault() config.LauncherConfig {
 // HideWindow / CREATE_NO_WINDOW. CREATE_NEW_PROCESS_GROUP detaches Ctrl-C.
 func detachAttrs() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: 0x00000200} // CREATE_NEW_PROCESS_GROUP
+}
+
+// wrapConsoleLaunch adapts the launch for console apps (PowerShell, cmd). The
+// problem: ClaudePanel is a GUI process with no console, so when Go spawns a
+// console child it wires the child's stdin to NUL (Go always sets
+// STARTF_USESTDHANDLES). An interactive shell — `powershell -NoExit`, `cmd /k` —
+// runs its command, then its prompt reads that NUL stdin, hits EOF, and exits
+// immediately: the window flashes open and closes. Routing through `cmd /c start`
+// hands the shell a brand-new console with live std handles instead of NUL, so it
+// stays open. The cmd host itself runs windowless (CREATE_NO_WINDOW) and exits
+// the moment `start` returns. GUI presets (Hyper, Windows Terminal) draw their
+// own windows and never read stdin, so they launch unchanged.
+func wrapConsoleLaunch(exe string, args []string, console bool) (string, []string, *syscall.SysProcAttr) {
+	if !console {
+		return exe, args, detachAttrs()
+	}
+	// `start "" <exe> <args…>`: the empty "" is the window title, so start treats
+	// <exe> as the program to run rather than as a title.
+	wrapped := append([]string{"/c", "start", "", exe}, args...)
+	return "cmd.exe", wrapped, &syscall.SysProcAttr{CreationFlags: 0x08000000} // CREATE_NO_WINDOW
 }
 
 // PostLaunch handles custom window resizing, border coloring, and high-frequency title locking on Windows.

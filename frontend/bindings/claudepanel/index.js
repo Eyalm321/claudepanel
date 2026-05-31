@@ -6,3 +6,7 @@ import * as App from "./app.js";
 export {
     App
 };
+
+export {
+    UpdateCheckResult
+} from "./models.js";

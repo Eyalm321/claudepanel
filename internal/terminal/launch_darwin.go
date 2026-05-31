@@ -66,6 +66,12 @@ func detachAttrs() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{}
 }
 
+// wrapConsoleLaunch is a no-op on macOS: terminals here own their windows and
+// the console-stdin problem is Windows-specific (see the Windows variant).
+func wrapConsoleLaunch(exe string, args []string, _ bool) (string, []string, *syscall.SysProcAttr) {
+	return exe, args, detachAttrs()
+}
+
 func GetPreExisting(preset string) map[uintptr]bool {
 	return nil
 }

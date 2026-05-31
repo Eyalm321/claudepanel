@@ -19,6 +19,32 @@ import * as platform$0 from "./internal/platform/models.js";
 // @ts-ignore: Unused imports
 import * as terminal$0 from "./internal/terminal/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+/**
+ * CheckForUpdates queries the latest GitHub release and compares its tag to the
+ * running version. Network/parse failures come back in Error rather than as a Go
+ * error so the menu can always show a friendly line. A "dev" build never reports
+ * an update available (it has no release to compare against).
+ * @returns {$CancellablePromise<$models.UpdateCheckResult>}
+ */
+export function CheckForUpdates() {
+    return $Call.ByID(2675659504).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
+ * CloseBrandMenu hides the dropdown — called by the menu page after an action so
+ * the window object is kept for an instant reopen.
+ * @returns {$CancellablePromise<void>}
+ */
+export function CloseBrandMenu() {
+    return $Call.ByID(1922934579);
+}
+
 /**
  * @returns {$CancellablePromise<void>}
  */
@@ -47,7 +73,7 @@ export function ConfigureTerminals() {
  */
 export function DetectTerminal() {
     return $Call.ByID(3295777970).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -56,7 +82,7 @@ export function DetectTerminal() {
  */
 export function GetBarData() {
     return $Call.ByID(1002198872).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType3($result);
     }));
 }
 
@@ -65,7 +91,7 @@ export function GetBarData() {
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType4($result);
     }));
 }
 
@@ -74,7 +100,7 @@ export function GetConfig() {
  */
 export function GetMonitors() {
     return $Call.ByID(3692271108).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType6($result);
     }));
 }
 
@@ -84,7 +110,7 @@ export function GetMonitors() {
  */
 export function GetPushdownStats() {
     return $Call.ByID(2130621354).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType6($result);
+        return $$createType7($result);
     }));
 }
 
@@ -102,7 +128,7 @@ export function GetVersion() {
  */
 export function ListTerminalPresets() {
     return $Call.ByID(3249389343).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType8($result);
+        return $$createType9($result);
     }));
 }
 
@@ -140,7 +166,7 @@ export function OpenTerminalPrompt(index) {
  */
 export function ParseStationItem(input) {
     return $Call.ByID(1591082711, input).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType9($result);
+        return $$createType10($result);
     }));
 }
 
@@ -250,6 +276,24 @@ export function SetPinned(pinned) {
 }
 
 /**
+ * ToggleBrandMenu opens the small dropdown anchored under the ClaudePanel brand
+ * icon, or closes it if it's already open. Like the settings popup it's a
+ * separate frameless window — the 28-px bar has no room to draw a menu and clips
+ * its own overflow. Created lazily, hidden (not destroyed) on close, and
+ * auto-hidden the moment it loses focus so clicking elsewhere dismisses it.
+ * 
+ * The toggle has to survive a race: clicking the icon while the menu is open
+ * first defocuses the menu (auto-hide) and only then delivers the click here, so
+ * a plain "show if hidden" would always reopen. menuVisible answers "is it up
+ * right now", and menuHiddenAt lets us recognise the auto-hide that this very
+ * click just triggered and stay closed.
+ * @returns {$CancellablePromise<void>}
+ */
+export function ToggleBrandMenu() {
+    return $Call.ByID(2718533905);
+}
+
+/**
  * @returns {$CancellablePromise<boolean>}
  */
 export function ToggleClickThrough() {
@@ -264,13 +308,14 @@ export function ToggleStartup() {
 }
 
 // Private type creation functions
-const $$createType0 = config$0.LauncherConfig.createFrom;
-const $$createType1 = claude$0.BarData.createFrom;
-const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = config$0.Config.createFrom;
-const $$createType4 = platform$0.MonitorInfo.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = platform$0.PushdownStats.createFrom;
-const $$createType7 = terminal$0.PresetInfo.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = config$0.StationItem.createFrom;
+const $$createType0 = $models.UpdateCheckResult.createFrom;
+const $$createType1 = config$0.LauncherConfig.createFrom;
+const $$createType2 = claude$0.BarData.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = config$0.Config.createFrom;
+const $$createType5 = platform$0.MonitorInfo.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = platform$0.PushdownStats.createFrom;
+const $$createType8 = terminal$0.PresetInfo.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = config$0.StationItem.createFrom;
