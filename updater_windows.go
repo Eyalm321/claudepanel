@@ -38,7 +38,7 @@ func resolveRelaunchPath(currentPath string) string {
 
 func runSilentInstaller(installerPath, appPath string) error {
 	psCommand := fmt.Sprintf(
-		`Start-Sleep -Seconds 1; Stop-Process -Name "ClaudePanel" -Force -ErrorAction SilentlyContinue; Start-Process -FilePath "%s" -ArgumentList "/S" -Wait; Start-Process -FilePath "%s"`,
+		`Start-Sleep -Seconds 1; Stop-Process -Name "ClaudePanel", "claudepanel" -Force -ErrorAction SilentlyContinue; Start-Process -FilePath "%s" -ArgumentList "/S" -Verb RunAs -Wait; Start-Process -FilePath "%s"`,
 		installerPath, appPath,
 	)
 
