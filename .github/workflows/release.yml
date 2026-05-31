@@ -80,7 +80,7 @@ jobs:
       - name: Build Windows installer
         if: matrix.os == 'windows-latest'
         working-directory: ./windows
-        run: wails3 task package WAILS3=wails3
+        run: wails3 task package WAILS3=wails3 VERSION=${{ steps.version.outputs.version }}
 
       - name: Stage Windows artifact
         if: matrix.os == 'windows-latest'
@@ -98,7 +98,7 @@ jobs:
       - name: Build macOS app bundle
         if: matrix.os == 'macos-latest'
         working-directory: ./darwin
-        run: wails3 task package:universal WAILS3=wails3
+        run: wails3 task package:universal WAILS3=wails3 VERSION=${{ steps.version.outputs.version }}
 
       - name: Build macOS .pkg
         if: matrix.os == 'macos-latest'
@@ -119,7 +119,7 @@ jobs:
       - name: Build Linux binary
         if: matrix.os == 'ubuntu-latest'
         working-directory: ./linux
-        run: wails3 task build WAILS3=wails3 EXTRA_TAGS=webkit2_41
+        run: wails3 task build WAILS3=wails3 EXTRA_TAGS=webkit2_41 VERSION=${{ steps.version.outputs.version }}
 
       - name: Normalise Linux binary name to lowercase
         if: matrix.os == 'ubuntu-latest'

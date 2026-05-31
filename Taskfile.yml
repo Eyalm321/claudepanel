@@ -13,13 +13,13 @@ tasks:
   windows:build:
     summary: Builds the application for Windows
     cmds:
-      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
+      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .VERSION}}VERSION={{.VERSION}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
         dir: ./windows
 
   windows:package:
     summary: Packages the application for Windows
     cmds:
-      - cmd: '"{{.WAILS3}}" task package {{if .FORMAT}}FORMAT={{.FORMAT}}{{end}} {{if .INSTALL_SCOPE}}INSTALL_SCOPE={{.INSTALL_SCOPE}}{{end}}'
+      - cmd: '"{{.WAILS3}}" task package {{if .FORMAT}}FORMAT={{.FORMAT}}{{end}} {{if .INSTALL_SCOPE}}INSTALL_SCOPE={{.INSTALL_SCOPE}}{{end}} {{if .VERSION}}VERSION={{.VERSION}}{{end}}'
         dir: ./windows
 
   windows:sign:
@@ -37,25 +37,25 @@ tasks:
   darwin:build:
     summary: Builds the application for macOS
     cmds:
-      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
+      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .VERSION}}VERSION={{.VERSION}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
         dir: ./darwin
 
   darwin:package:
     summary: Packages the application for macOS
     cmds:
-      - cmd: '"{{.WAILS3}}" task package'
+      - cmd: '"{{.WAILS3}}" task package {{if .VERSION}}VERSION={{.VERSION}}{{end}}'
         dir: ./darwin
 
   linux:build:
     summary: Builds the application for Linux
     cmds:
-      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
+      - cmd: '"{{.WAILS3}}" task build {{if .ARCH}}ARCH={{.ARCH}}{{end}} {{if .DEV}}DEV={{.DEV}}{{end}} {{if .VERSION}}VERSION={{.VERSION}}{{end}} {{if .EXTRA_TAGS}}EXTRA_TAGS={{.EXTRA_TAGS}}{{end}} {{if .OBFUSCATED}}OBFUSCATED={{.OBFUSCATED}}{{end}} {{if .GARBLE_ARGS}}GARBLE_ARGS={{.GARBLE_ARGS}}{{end}}'
         dir: ./linux
 
   linux:package:
     summary: Packages the application for Linux
     cmds:
-      - cmd: '"{{.WAILS3}}" task package'
+      - cmd: '"{{.WAILS3}}" task package {{if .VERSION}}VERSION={{.VERSION}}{{end}}'
         dir: ./linux
 
   android:build:
