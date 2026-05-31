@@ -30,6 +30,50 @@ function renderProgress(pct) {
   return { fill: char.repeat(filled), empty: '·'.repeat(empty) };
 }
 
+// normalizeBarSeparators owns every inter-segment "·" so hiding any segment
+// (via a Bar Options toggle or the data-driven hourly gate) never leaves a
+// doubled or dangling separator. It walks the bar contents in order and shows a
+// separator only when a visible segment precedes it and none has been shown
+// since — collapsing runs of hidden segments + their separators to a single
+// divider, and dropping leading/trailing ones. Segment visibility is read from
+// each element's own inline style.display, set by the apply*/refresh functions.
+function normalizeBarSeparators() {
+  const container = document.getElementById('bar-main-contents');
+  if (!container) return;
+  let seenSeg = false;   // a visible segment has appeared at/after the start
+  let gapHasSep = false; // a separator already shown since the last visible seg
+  for (const el of container.children) {
+    if (el.classList.contains('spacer')) continue;
+    if (el.classList.contains('sep')) {
+      const show = seenSeg && !gapHasSep;
+      el.style.display = show ? '' : 'none';
+      if (show) gapHasSep = true;
+    } else if (el.style.display !== 'none') {
+      seenSeg = true;
+      gapHasSep = false;
+    }
+  }
+}
+
+// applyFeatureVisibility shows/hides the optional bar segments per cfg.features
+// (a missing flag counts as enabled). The terminal segment is owned by
+// applyTermSegment and the 5-hour block by refresh (it also needs live data),
+// so this handles radio / monitor / theme / weekly. Ends by normalizing the
+// separators around whatever changed.
+function applyFeatureVisibility() {
+  const f = (cfg && cfg.features) || {};
+  const setDisp = (id, on) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? '' : 'none';
+  };
+  setDisp('seg-radio', f.radio !== false);
+  setDisp('seg-mon', f.monitor !== false);
+  setDisp('seg-theme', f.theme !== false);
+  setDisp('seg-msgs', f.weeklyUsage !== false);
+  setDisp('seg-reset', f.weeklyUsage !== false);
+  normalizeBarSeparators();
+}
+
 // State
 let cfg        = null;
 let monitors   = [];
@@ -83,14 +127,15 @@ async function refresh() {
     document.getElementById('seg-msgs').classList.toggle('warn-medium', warnMed);
     document.getElementById('seg-msgs').classList.toggle('warn-high', warnHigh);
 
-    // 5-hour rolling usage and reset
-    const sepHourly = document.getElementById('sep-hourly');
+    // 5-hour rolling usage and reset. Shown only when data is available AND the
+    // 5H feature is enabled; the surrounding separators are owned by
+    // normalizeBarSeparators (called at the end of refresh).
     const segHourly = document.getElementById('seg-hourly');
-    const sepHourlyReset = document.getElementById('sep-hourly-reset');
     const segHourlyReset = document.getElementById('seg-hourly-reset');
-    if (data.hourlyPercent >= 0) {
+    const hourlyEnabled = !cfg || !cfg.features || cfg.features.hourlyUsage !== false;
+    if (data.hourlyPercent >= 0 && hourlyEnabled) {
       document.getElementById('val-hourly').textContent = (data.hourlyPercent * 100).toFixed(0) + '%';
-      
+
       const hpct = data.hourlyPercent || 0;
       // 1. Text blocks
       const hp = renderProgress(hpct);
@@ -98,23 +143,19 @@ async function refresh() {
       document.getElementById('prog-empty-hourly-text').textContent = hp.empty;
       // 2. Solid outlined bar
       document.getElementById('prog-fill-hourly-bar').style.width = Math.min(100, Math.max(0, hpct * 100)) + '%';
-      
+
       document.getElementById('val-hourly-reset').textContent = data.hourlyResetIn || '---';
-      
-      if (sepHourly) sepHourly.style.display = '';
+
       if (segHourly) segHourly.style.display = '';
-      if (sepHourlyReset) sepHourlyReset.style.display = '';
       if (segHourlyReset) segHourlyReset.style.display = '';
-      
+
       // Dynamic hourly warnings
       const hwarnMed = hpct >= 0.85 && hpct < 0.95;
       const hwarnHigh = hpct >= 0.95;
       segHourly.classList.toggle('warn-medium', hwarnMed);
       segHourly.classList.toggle('warn-high', hwarnHigh);
     } else {
-      if (sepHourly) sepHourly.style.display = 'none';
       if (segHourly) segHourly.style.display = 'none';
-      if (sepHourlyReset) sepHourlyReset.style.display = 'none';
       if (segHourlyReset) segHourlyReset.style.display = 'none';
     }
 
@@ -132,6 +173,10 @@ async function refresh() {
     document.getElementById('val-status').textContent = displayStatus;
     const segSt = document.getElementById('seg-status');
     segSt.className = 'seg ' + status;
+
+    // Tidy separators after the weekly/hourly segments settled to their final
+    // visibility for this tick.
+    normalizeBarSeparators();
 
   } catch (err) {
     console.error('refresh error:', err);
@@ -179,6 +224,7 @@ async function init() {
     }
 
     applyTermSegment();
+    applyFeatureVisibility();
 
     // Radio stations (config-driven) + persisted selection/volume.
     stations = (cfg && cfg.stations) || [];
@@ -203,11 +249,13 @@ async function init() {
       console.error('Failed to set initial radio volume:', e);
     }
 
-    Events.On('config:changed',  refresh);
-    Events.On('config:changed',  refreshTerminals);
+    // One ordered handler for config changes: re-read cfg FIRST, then re-render
+    // everything that depends on it (so the hourly gate in refresh() sees the
+    // fresh feature flags rather than a stale copy). account/monitor keep their
+    // lightweight dedicated handlers.
+    Events.On('config:changed', onConfigChanged);
     Events.On('account:changed', refresh);
     Events.On('monitor:changed', updateMonitorDisplay);
-    Events.On('config:changed', refreshStations);
     // Auto-hide slide animation is driven from Go (window position);
     // no JS-side animation state to manage.
 
@@ -507,15 +555,16 @@ let isLaunching = false;
 
 function applyTermSegment() {
   const seg = document.getElementById('seg-term');
-  const sep = document.getElementById('sep-term');
   const terms = (cfg && cfg.terminals) || [];
-  if (terms.length === 0) {
+  const enabled = !cfg || !cfg.features || cfg.features.terminals !== false;
+  // Hidden when the feature is off OR there's nothing to launch. The adjacent
+  // separator (#sep-term) is owned by normalizeBarSeparators, not here.
+  if (terms.length === 0 || !enabled) {
     if (seg) seg.style.display = 'none';
-    if (sep) sep.style.display = 'none';
+    normalizeBarSeparators();
     return;
   }
   if (seg) seg.style.display = '';
-  if (sep) sep.style.display = '';
   if (activeTermIdx >= terms.length) activeTermIdx = 0;
 
   const t = terms[activeTermIdx];
@@ -533,6 +582,8 @@ function applyTermSegment() {
   const showArrows = terms.length >= 2 ? '' : 'none';
   document.getElementById('btn-term-prev').style.display = showArrows;
   document.getElementById('btn-term-next').style.display = showArrows;
+
+  normalizeBarSeparators();
 }
 
 function cycleTerm(dir) {
@@ -591,6 +642,16 @@ async function refreshStations() {
     if (activeStationIdx >= stations.length) activeStationIdx = 0;
     applyStationsUI();
   } catch (e) { /* ignore */ }
+}
+
+// Single config-change handler. Order matters: refreshTerminals/refreshStations
+// re-read cfg, then applyFeatureVisibility + refresh render against that fresh
+// copy (refresh's 5H gate reads cfg.features, so it must run last).
+async function onConfigChanged() {
+  await refreshTerminals();
+  applyFeatureVisibility();
+  await refreshStations();
+  await refresh();
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

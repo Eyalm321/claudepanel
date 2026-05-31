@@ -5,6 +5,7 @@
 export {
     AccountConfig,
     Config,
+    FeatureConfig,
     HotkeyConfig,
     LauncherConfig,
     StationConfig,

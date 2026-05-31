@@ -11,9 +11,7 @@ type Controller interface {
 	SetActiveAccount(index int) error
 	SetMonitor(index int) error
 	ToggleStartup()
-	ConfigureAccounts()
-	ConfigureTerminals()
-	ConfigureStations()
+	OpenSettings()
 	Quit()
 }
 
@@ -83,19 +81,10 @@ func (m *Manager) Build(
 		controller.ToggleStartup()
 	})
 
-	// Configure Accounts item
-	m.menu.Add("Configure Accounts...").OnClick(func(ctx *application.Context) {
-		controller.ConfigureAccounts()
-	})
-
-	// Configure Terminals item
-	m.menu.Add("Configure Terminals...").OnClick(func(ctx *application.Context) {
-		controller.ConfigureTerminals()
-	})
-
-	// Configure Stations item
-	m.menu.Add("Configure Stations...").OnClick(func(ctx *application.Context) {
-		controller.ConfigureStations()
+	// Settings — opens the unified window (Accounts / Terminals / Stations / Bar
+	// Options) with a left-sidebar nav, replacing the old per-feature items.
+	m.menu.Add("Settings...").OnClick(func(ctx *application.Context) {
+		controller.OpenSettings()
 	})
 
 	m.menu.AddSeparator()

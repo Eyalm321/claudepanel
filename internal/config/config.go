@@ -61,6 +61,22 @@ type LauncherConfig struct {
 	Args   []string `json:"args,omitempty"` // override template
 }
 
+// FeatureConfig toggles which optional bar segments are active. Disabling a
+// feature hides its segment AND, where one exists, frees the backing resource
+// rather than merely hiding the UI — Radio is the notable case: when off, the
+// native audio engine (a long-lived background player process) is never started
+// / is torn down. The other flags are pure show/hide of a bar segment. All
+// default true (see Defaults); a missing/partial "features" object in an older
+// config keeps unspecified flags enabled because Load unmarshals over Defaults.
+type FeatureConfig struct {
+	Radio       bool `json:"radio"`       // #seg-radio + native audio engine
+	Terminals   bool `json:"terminals"`   // #seg-term ("LAUNCH")
+	Monitor     bool `json:"monitor"`     // #seg-mon cycler
+	Theme       bool `json:"theme"`       // #seg-theme cycler
+	WeeklyUsage bool `json:"weeklyUsage"` // #seg-msgs + #seg-reset
+	HourlyUsage bool `json:"hourlyUsage"` // #seg-hourly + #seg-hourly-reset
+}
+
 type Config struct {
 	Monitor          int              `json:"monitor"`
 	Theme            string           `json:"theme"`
@@ -79,6 +95,7 @@ type Config struct {
 	Stations         []StationConfig  `json:"stations"`
 	ActiveStation    int              `json:"activeStation"`
 	RadioVolume      float64          `json:"radioVolume"` // 0..1, persisted
+	Features         FeatureConfig    `json:"features"`    // which bar segments are enabled
 }
 
 func AppDataDir() string {
@@ -138,6 +155,15 @@ func Defaults() Config {
 		},
 		ActiveStation: 0,
 		RadioVolume:   1.0,
+		// Every optional segment on by default — preserves the pre-toggle bar.
+		Features: FeatureConfig{
+			Radio:       true,
+			Terminals:   true,
+			Monitor:     true,
+			Theme:       true,
+			WeeklyUsage: true,
+			HourlyUsage: true,
+		},
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"claudepanel/internal/audio"
@@ -52,6 +53,15 @@ type App struct {
 	hwnd      uintptr
 	trayMgr   *tray.Manager
 	radio     *radio.Resolver
+
+	// audioCtrl/station are the radio "resource dependency": the native audio
+	// engine (a background player process) and the queue that drives it. They
+	// exist only while the Radio feature is enabled — created in initAudio,
+	// destroyed in teardownAudio when the user toggles Radio off — so disabling
+	// Radio frees the resource, not just the UI. audioMu guards the two pointers
+	// because they're written from the SaveConfig goroutine but read from the
+	// audio event callback and the Radio* binding goroutines.
+	audioMu   sync.Mutex
 	audioCtrl *audio.Controller
 	station   *station.StationPlayer
 
@@ -106,28 +116,88 @@ func NewApp() *App {
 	res := radio.New()
 	app := &App{cfg: cfg, radio: res}
 
-	ctrl, err := audio.NewController(radioResolverAdapter{res}, func(ev audio.Event) {
+	// Only stand up the native audio engine when the Radio feature is enabled —
+	// when it's off we never spawn the background player process at all.
+	if cfg.Features.Radio {
+		app.initAudio()
+	}
+
+	return app
+}
+
+// initAudio builds the native audio controller and the station player that
+// drives it, wiring controller events through the station (auto-advance/loop)
+// and on to the frontend. Idempotent: a no-op if the engine is already up. Safe
+// to call at runtime when the user re-enables Radio.
+func (a *App) initAudio() {
+	a.audioMu.Lock()
+	if a.audioCtrl != nil {
+		a.audioMu.Unlock()
+		return
+	}
+	a.audioMu.Unlock()
+
+	ctrl, err := audio.NewController(radioResolverAdapter{a.radio}, func(ev audio.Event) {
 		// Route every controller event through the station player, which
 		// auto-advances/loops and then forwards (enriched) to the frontend.
-		if app.station != nil {
-			app.station.OnAudioEvent(ev)
-		} else if app.app != nil {
-			app.app.Event.Emit("radio:state", ev)
+		st := a.getStation()
+		if st != nil {
+			st.OnAudioEvent(ev)
+		} else if a.app != nil {
+			a.app.Event.Emit("radio:state", ev)
 		}
 	})
 	if err != nil {
 		log.Printf("[audio] Failed to initialize native audio controller: %v", err)
-	} else {
-		app.audioCtrl = ctrl
-		app.station = station.New(ctrl, res, func(ev audio.Event) {
-			if app.app != nil {
-				app.app.Event.Emit("radio:state", ev)
-			}
-		})
-		app.station.SetStations(cfg.Stations)
+		return
 	}
+	st := station.New(ctrl, a.radio, func(ev audio.Event) {
+		if a.app != nil {
+			a.app.Event.Emit("radio:state", ev)
+		}
+	})
+	st.SetStations(a.cfg.Stations)
 
-	return app
+	a.audioMu.Lock()
+	a.audioCtrl = ctrl
+	a.station = st
+	a.audioMu.Unlock()
+
+	// Re-apply the persisted volume so a runtime re-enable matches the bar.
+	if a.cfg.RadioVolume > 0 {
+		_ = st.SetVolume(a.cfg.RadioVolume)
+	}
+}
+
+// teardownAudio stops playback and shuts the native audio engine down, releasing
+// the background player process. Called when the user disables Radio. Emits an
+// idle state so the bar's radio segment (if still shown) resets to [OFF].
+func (a *App) teardownAudio() {
+	a.audioMu.Lock()
+	st := a.station
+	ctrl := a.audioCtrl
+	a.station = nil
+	a.audioCtrl = nil
+	a.audioMu.Unlock()
+
+	if st != nil {
+		_ = st.Stop()
+	}
+	if ctrl != nil {
+		_ = ctrl.Close()
+	}
+	if a.app != nil {
+		a.app.Event.Emit("radio:state", audio.Event{State: audio.StateIdle})
+	}
+}
+
+// getStation returns the current station player under the lock (nil while Radio
+// is disabled). Callers invoke methods on the returned pointer outside the lock
+// — StationPlayer has its own internal synchronization.
+func (a *App) getStation() *station.StationPlayer {
+	a.audioMu.Lock()
+	defer a.audioMu.Unlock()
+	return a.station
 }
 
 func (a *App) startup(app *application.App, window *application.WebviewWindow) {
@@ -431,9 +501,10 @@ func (a *App) ToggleStartup() {
 	}
 }
 
-func (a *App) ConfigureAccounts()  { a.openSettings("accounts", 0, "") }
-func (a *App) ConfigureTerminals() { a.openSettings("terminals", 0, "") }
-func (a *App) ConfigureStations()  { a.openSettings("stations", 0, "") }
+// OpenSettings opens the unified settings window (on the Accounts section). The
+// window's left-sidebar nav lets the user move to Terminals / Stations / Bar
+// Options from there — replacing the old per-feature tray items.
+func (a *App) OpenSettings() { a.openSettings("accounts", 0, "") }
 
 // settingsShowPayload tells the popup which panel to render. Index/Name carry
 // extra context for context-specific panels (e.g. "terminal-open" needs the
@@ -466,9 +537,9 @@ func (a *App) openSettings(panel string, index int, name string) {
 		a.settingsWindow = a.app.Window.NewWithOptions(application.WebviewWindowOptions{
 			Name:             "settings",
 			Title:            "Claude Panel",
-			Width:            560,
+			Width:            660,
 			Height:           420,
-			MinWidth:         420,
+			MinWidth:         520,
 			MinHeight:        260,
 			Frameless:        true,
 			AlwaysOnTop:      true,
@@ -669,12 +740,23 @@ func (a *App) GetConfig() config.Config {
 func (a *App) SaveConfig(cfg config.Config) error {
 	prevMonitor := a.cfg.Monitor
 	prevAppBar := a.cfg.AppBarMode
+	prevRadio := a.cfg.Features.Radio
 	a.cfg = &cfg
 	if err := config.Save(a.cfg); err != nil {
 		return err
 	}
-	if a.station != nil {
-		a.station.SetStations(cfg.Stations)
+	// Bring the radio "resource dependency" up/down to match the toggle: enabling
+	// spawns the native audio engine, disabling tears it down and frees the
+	// background player process (not just hides the segment).
+	if cfg.Features.Radio != prevRadio {
+		if cfg.Features.Radio {
+			a.initAudio()
+		} else {
+			a.teardownAudio()
+		}
+	}
+	if st := a.getStation(); st != nil {
+		st.SetStations(cfg.Stations)
 	}
 	if a.hwnd != 0 {
 		if cfg.Monitor != prevMonitor || cfg.AppBarMode != prevAppBar {
@@ -768,10 +850,11 @@ func (a *App) GetVersion() string {
 // station player owns the queue, shuffle, auto-advance and looping; it drives
 // the single-track audio controller one track at a time.
 func (a *App) RadioPlayStation(index int) error {
-	if a.station == nil {
-		return fmt.Errorf("audio controller not initialized")
+	st := a.getStation()
+	if st == nil {
+		return fmt.Errorf("radio is disabled")
 	}
-	return a.station.Play(index)
+	return st.Play(index)
 }
 
 // ParseStationItem classifies a single URL/ID into a StationItem for the
@@ -791,21 +874,24 @@ func (a *App) SetActiveStation(index int) error {
 }
 
 func (a *App) RadioPause() error {
-	if a.station == nil {
-		return fmt.Errorf("audio controller not initialized")
+	st := a.getStation()
+	if st == nil {
+		return fmt.Errorf("radio is disabled")
 	}
-	return a.station.Pause()
+	return st.Pause()
 }
 
 func (a *App) RadioSetVolume(v float64) error {
-	if a.station == nil {
-		return fmt.Errorf("audio controller not initialized")
-	}
 	// Persist the chosen volume so it survives restarts (replaces the prior
-	// localStorage-only value).
+	// localStorage-only value), even while the engine is down — so a later
+	// re-enable picks it up.
 	a.cfg.RadioVolume = v
 	_ = config.Save(a.cfg)
-	return a.station.SetVolume(v)
+	st := a.getStation()
+	if st == nil {
+		return fmt.Errorf("radio is disabled")
+	}
+	return st.SetVolume(v)
 }
 
 func (a *App) SetPinned(pinned bool) error {
@@ -860,11 +946,24 @@ func (a *App) GetPushdownStats() platform.PushdownStats {
 }
 
 // OpenTerminal launches the configured launcher entry at index in a new,
-// visible terminal window. The launcher program is resolved lazily on first
-// use (no terminal detection happens in config.Defaults) and persisted. sublabel
-// is an optional per-launch suffix appended to the tab title ("CRM · backend")
-// so several terminals from one entry can be told apart; "" for a plain open.
+// visible terminal window, scoped to the currently-shown account. It's the
+// plain-click path; OpenTerminalAs is the general form.
 func (a *App) OpenTerminal(index int, sublabel string) error {
+	return a.OpenTerminalAs(index, a.cfg.ActiveAccount, sublabel)
+}
+
+// OpenTerminalAs launches the launcher entry at index scoped to accountIndex's
+// account (its name tags the title and its config dir becomes CLAUDE_CONFIG_DIR
+// for the launched `claude`). It's the Shift-click path, where the popup lets
+// the user pick an account other than the active one. accountIndex out of range
+// launches unscoped. The launcher program is resolved lazily on first use (no
+// terminal detection happens in config.Defaults) and persisted. sublabel is an
+// optional per-launch suffix appended to the tab title ("CRM · backend") so
+// several terminals from one entry can be told apart; "" for a plain open.
+func (a *App) OpenTerminalAs(index, accountIndex int, sublabel string) error {
+	if !a.cfg.Features.Terminals {
+		return fmt.Errorf("terminal launching is disabled")
+	}
 	if index < 0 || index >= len(a.cfg.Terminals) {
 		return fmt.Errorf("terminal index %d out of range", index)
 	}
@@ -877,11 +976,9 @@ func (a *App) OpenTerminal(index int, sublabel string) error {
 		}
 	}
 	entry := a.cfg.Terminals[index]
-	// Scope the terminal to the currently-shown account: its name tags the title
-	// and its config dir becomes CLAUDE_CONFIG_DIR for the launched `claude`.
 	opts := terminal.LaunchOpts{Sublabel: sublabel}
-	if a.cfg.ActiveAccount >= 0 && a.cfg.ActiveAccount < len(a.cfg.Accounts) {
-		acc := a.cfg.Accounts[a.cfg.ActiveAccount]
+	if accountIndex >= 0 && accountIndex < len(a.cfg.Accounts) {
+		acc := a.cfg.Accounts[accountIndex]
 		opts.Account = acc.Name
 		opts.ConfigDir = acc.Path
 	}
@@ -893,11 +990,14 @@ func (a *App) OpenTerminal(index int, sublabel string) error {
 	return nil
 }
 
-// OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — a
-// sublabel textbox for entry index. It's the Shift-click path from the bar; the
-// panel then calls OpenTerminal(index, sublabel). Plain click skips this and
-// opens directly.
+// OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — an
+// account picker + sublabel textbox for entry index. It's the Shift-click path
+// from the bar; the panel then calls OpenTerminalAs(index, account, sublabel).
+// Plain click skips this and opens directly.
 func (a *App) OpenTerminalPrompt(index int) error {
+	if !a.cfg.Features.Terminals {
+		return fmt.Errorf("terminal launching is disabled")
+	}
 	if index < 0 || index >= len(a.cfg.Terminals) {
 		return fmt.Errorf("terminal index %d out of range", index)
 	}

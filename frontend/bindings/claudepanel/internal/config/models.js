@@ -169,6 +169,14 @@ export class Config {
              */
             this["radioVolume"] = 0;
         }
+        if (!("features" in $$source)) {
+            /**
+             * which bar segments are enabled
+             * @member
+             * @type {FeatureConfig}
+             */
+            this["features"] = (new FeatureConfig());
+        }
 
         Object.assign(this, $$source);
     }
@@ -184,6 +192,7 @@ export class Config {
         const $$createField12_0 = $$createType4;
         const $$createField13_0 = $$createType5;
         const $$createField14_0 = $$createType7;
+        const $$createField17_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("accounts" in $$parsedSource) {
             $$parsedSource["accounts"] = $$createField6_0($$parsedSource["accounts"]);
@@ -200,7 +209,88 @@ export class Config {
         if ("stations" in $$parsedSource) {
             $$parsedSource["stations"] = $$createField14_0($$parsedSource["stations"]);
         }
+        if ("features" in $$parsedSource) {
+            $$parsedSource["features"] = $$createField17_0($$parsedSource["features"]);
+        }
         return new Config(/** @type {Partial<Config>} */($$parsedSource));
+    }
+}
+
+/**
+ * FeatureConfig toggles which optional bar segments are active. Disabling a
+ * feature hides its segment AND, where one exists, frees the backing resource
+ * rather than merely hiding the UI — Radio is the notable case: when off, the
+ * native audio engine (a long-lived background player process) is never started
+ * / is torn down. The other flags are pure show/hide of a bar segment. All
+ * default true (see Defaults); a missing/partial "features" object in an older
+ * config keeps unspecified flags enabled because Load unmarshals over Defaults.
+ */
+export class FeatureConfig {
+    /**
+     * Creates a new FeatureConfig instance.
+     * @param {Partial<FeatureConfig>} [$$source = {}] - The source object to create the FeatureConfig.
+     */
+    constructor($$source = {}) {
+        if (!("radio" in $$source)) {
+            /**
+             * #seg-radio + native audio engine
+             * @member
+             * @type {boolean}
+             */
+            this["radio"] = false;
+        }
+        if (!("terminals" in $$source)) {
+            /**
+             * #seg-term ("LAUNCH")
+             * @member
+             * @type {boolean}
+             */
+            this["terminals"] = false;
+        }
+        if (!("monitor" in $$source)) {
+            /**
+             * #seg-mon cycler
+             * @member
+             * @type {boolean}
+             */
+            this["monitor"] = false;
+        }
+        if (!("theme" in $$source)) {
+            /**
+             * #seg-theme cycler
+             * @member
+             * @type {boolean}
+             */
+            this["theme"] = false;
+        }
+        if (!("weeklyUsage" in $$source)) {
+            /**
+             * #seg-msgs + #seg-reset
+             * @member
+             * @type {boolean}
+             */
+            this["weeklyUsage"] = false;
+        }
+        if (!("hourlyUsage" in $$source)) {
+            /**
+             * #seg-hourly + #seg-hourly-reset
+             * @member
+             * @type {boolean}
+             */
+            this["hourlyUsage"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FeatureConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {FeatureConfig}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FeatureConfig(/** @type {Partial<FeatureConfig>} */($$parsedSource));
     }
 }
 
@@ -284,7 +374,7 @@ export class LauncherConfig {
      * @returns {LauncherConfig}
      */
     static createFrom($$source = {}) {
-        const $$createField2_0 = $$createType8;
+        const $$createField2_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("args" in $$parsedSource) {
             $$parsedSource["args"] = $$createField2_0($$parsedSource["args"]);
@@ -334,7 +424,7 @@ export class StationConfig {
      * @returns {StationConfig}
      */
     static createFrom($$source = {}) {
-        const $$createField1_0 = $$createType10;
+        const $$createField1_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField1_0($$parsedSource["items"]);
@@ -472,6 +562,7 @@ const $$createType4 = $Create.Array($$createType3);
 const $$createType5 = LauncherConfig.createFrom;
 const $$createType6 = StationConfig.createFrom;
 const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = $Create.Array($Create.Any);
-const $$createType9 = StationItem.createFrom;
-const $$createType10 = $Create.Array($$createType9);
+const $$createType8 = FeatureConfig.createFrom;
+const $$createType9 = $Create.Array($Create.Any);
+const $$createType10 = StationItem.createFrom;
+const $$createType11 = $Create.Array($$createType10);

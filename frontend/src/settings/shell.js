@@ -29,9 +29,19 @@ function closeWindow() {
 }
 
 // createShell builds the chrome once and returns a controller able to swap the
-// mounted panel. `panels` is a map of id -> { title, mount(bodyEl) }.
+// mounted panel. `panels` is a map of id -> { title, mount(bodyEl), nav?,
+// navLabel? }. Panels with `nav !== false` get a left-sidebar entry (in map
+// insertion order); a panel with `nav === false` (e.g. the Shift-click
+// terminal-open dialog) hides the sidebar and renders standalone.
 export function createShell(panels) {
   const root = document.getElementById('settings-root');
+
+  // Build the sidebar nav from the nav-eligible panels, preserving order.
+  const navIds = Object.keys(panels).filter((id) => panels[id].nav !== false);
+  const navHtml = navIds
+    .map((id) => `<button class="modal-nav-item" data-panel="${id}">${panels[id].navLabel || panels[id].title}</button>`)
+    .join('');
+
   root.innerHTML = `
     <div class="modal">
       <div class="modal-titlebar" style="--wails-draggable: drag">
@@ -39,17 +49,30 @@ export function createShell(panels) {
         <span class="modal-title" id="modal-title">SETTINGS</span>
         <button class="modal-close" id="modal-close" title="Close (Esc)" style="--wails-draggable: no-drag">✕</button>
       </div>
-      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-main">
+        <nav class="modal-nav" id="modal-nav">${navHtml}</nav>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
     </div>`;
 
   const titleEl = root.querySelector('#modal-title');
   const bodyEl = root.querySelector('#modal-body');
+  const navEl = root.querySelector('#modal-nav');
   root.querySelector('#modal-close').addEventListener('click', closeWindow);
 
   async function show(panelId, data) {
     const panel = panels[panelId] || panels[Object.keys(panels)[0]];
     if (!panel) return;
     titleEl.textContent = panel.title;
+
+    // A non-nav panel (terminal-open) reads as a focused dialog — hide the
+    // sidebar; everything else shows it with the active item highlighted.
+    const showNav = panel.nav !== false;
+    navEl.style.display = showNav ? '' : 'none';
+    navEl.querySelectorAll('.modal-nav-item').forEach((b) => {
+      b.classList.toggle('active', b.dataset.panel === panelId);
+    });
+
     bodyEl.innerHTML = '';
     try {
       await panel.mount(bodyEl, data);
@@ -57,6 +80,11 @@ export function createShell(panels) {
       console.error(`Failed to mount panel "${panelId}":`, err);
     }
   }
+
+  // Sidebar navigation.
+  navEl.querySelectorAll('.modal-nav-item').forEach((btn) => {
+    btn.addEventListener('click', () => show(btn.dataset.panel));
+  });
 
   // Esc closes from any panel.
   document.addEventListener('keydown', (e) => {

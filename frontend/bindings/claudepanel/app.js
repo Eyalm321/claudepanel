@@ -46,27 +46,6 @@ export function CloseBrandMenu() {
 }
 
 /**
- * @returns {$CancellablePromise<void>}
- */
-export function ConfigureAccounts() {
-    return $Call.ByID(2903865439);
-}
-
-/**
- * @returns {$CancellablePromise<void>}
- */
-export function ConfigureStations() {
-    return $Call.ByID(2270322734);
-}
-
-/**
- * @returns {$CancellablePromise<void>}
- */
-export function ConfigureTerminals() {
-    return $Call.ByID(1237227572);
-}
-
-/**
  * DetectTerminal returns the auto-detected launcher for this machine without
  * persisting it — used by the editor to preselect a sensible default.
  * @returns {$CancellablePromise<config$0.LauncherConfig>}
@@ -133,11 +112,19 @@ export function ListTerminalPresets() {
 }
 
 /**
+ * OpenSettings opens the unified settings window (on the Accounts section). The
+ * window's left-sidebar nav lets the user move to Terminals / Stations / Bar
+ * Options from there — replacing the old per-feature tray items.
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenSettings() {
+    return $Call.ByID(2024983644);
+}
+
+/**
  * OpenTerminal launches the configured launcher entry at index in a new,
- * visible terminal window. The launcher program is resolved lazily on first
- * use (no terminal detection happens in config.Defaults) and persisted. sublabel
- * is an optional per-launch suffix appended to the tab title ("CRM · backend")
- * so several terminals from one entry can be told apart; "" for a plain open.
+ * visible terminal window, scoped to the currently-shown account. It's the
+ * plain-click path; OpenTerminalAs is the general form.
  * @param {number} index
  * @param {string} sublabel
  * @returns {$CancellablePromise<void>}
@@ -147,10 +134,28 @@ export function OpenTerminal(index, sublabel) {
 }
 
 /**
- * OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — a
- * sublabel textbox for entry index. It's the Shift-click path from the bar; the
- * panel then calls OpenTerminal(index, sublabel). Plain click skips this and
- * opens directly.
+ * OpenTerminalAs launches the launcher entry at index scoped to accountIndex's
+ * account (its name tags the title and its config dir becomes CLAUDE_CONFIG_DIR
+ * for the launched `claude`). It's the Shift-click path, where the popup lets
+ * the user pick an account other than the active one. accountIndex out of range
+ * launches unscoped. The launcher program is resolved lazily on first use (no
+ * terminal detection happens in config.Defaults) and persisted. sublabel is an
+ * optional per-launch suffix appended to the tab title ("CRM · backend") so
+ * several terminals from one entry can be told apart; "" for a plain open.
+ * @param {number} index
+ * @param {number} accountIndex
+ * @param {string} sublabel
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenTerminalAs(index, accountIndex, sublabel) {
+    return $Call.ByID(1650010541, index, accountIndex, sublabel);
+}
+
+/**
+ * OpenTerminalPrompt opens the settings popup on the "terminal-open" panel — an
+ * account picker + sublabel textbox for entry index. It's the Shift-click path
+ * from the bar; the panel then calls OpenTerminalAs(index, account, sublabel).
+ * Plain click skips this and opens directly.
  * @param {number} index
  * @returns {$CancellablePromise<void>}
  */
