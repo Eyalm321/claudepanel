@@ -498,7 +498,7 @@ func (a *App) CheckForUpdates() UpdateCheckResult {
 	}
 	res.Latest = strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
 	cur := strings.TrimPrefix(strings.TrimSpace(Version), "v")
-	res.UpdateAvailable = res.Latest != "" && cur != "dev" && res.Latest != cur
+	res.UpdateAvailable = res.Latest != "" && (cur == "dev" || res.Latest != cur)
 	return res
 }
 
