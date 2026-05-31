@@ -44,8 +44,7 @@ const usageStaleAfter = 2 * time.Hour
 
 // readUsage loads rate-limit data captured by the statusline wrapper. Returns nil
 // if the file is missing, unparseable, or stale — older than usageStaleAfter
-// relative to now. captured_at is written by the wrapper as JavaScript Date.now()
-// (Unix milliseconds); a zero/missing captured_at is tolerated, since wrappers
+// relative to now. A zero/missing captured_at is tolerated, since wrappers
 // predating that field still produce useful current data.
 func readUsage(accountPath string, now time.Time) *APIUsage {
 	data, err := os.ReadFile(filepath.Join(accountPath, "rate_limits.json"))
@@ -56,7 +55,7 @@ func readUsage(accountPath string, now time.Time) *APIUsage {
 	if json.Unmarshal(data, &rl) != nil {
 		return nil
 	}
-	if rl.CapturedAt > 0 && now.Sub(time.UnixMilli(rl.CapturedAt)) > usageStaleAfter {
+	if t := capturedAtTime(rl.CapturedAt); !t.IsZero() && now.Sub(t) > usageStaleAfter {
 		return nil
 	}
 
@@ -97,4 +96,21 @@ func clampPct(v float64) float64 {
 		return 1.0
 	}
 	return v
+}
+
+// capturedAtTime interprets the wrapper's captured_at timestamp, which is Unix
+// seconds for the seconds-based statusline wrapper (matching resets_at in the
+// same file) and Unix milliseconds for the Date.now()-based one. Disambiguate by
+// magnitude: any realistic millisecond timestamp is >= 1e12, while a seconds
+// timestamp stays far below that until well past year 5000. A zero/negative
+// value means "absent" and yields the zero time.
+func capturedAtTime(v int64) time.Time {
+	switch {
+	case v <= 0:
+		return time.Time{}
+	case v >= 1_000_000_000_000: // >= 1e12 ⇒ milliseconds
+		return time.UnixMilli(v)
+	default: // Unix seconds
+		return time.Unix(v, 0)
+	}
 }
