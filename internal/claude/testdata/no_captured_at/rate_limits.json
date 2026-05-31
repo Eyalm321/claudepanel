@@ -1,5 +1,0 @@
-{
-  "five_hour": { "used_percentage": 10.0, "resets_at": 1780237800 },
-  "seven_day": { "used_percentage": 40.0, "resets_at": 1780502400 },
-  "model_id": "claude-opus-4-7"
-}

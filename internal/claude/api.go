@@ -37,25 +37,17 @@ type rateLimitsFile struct {
 	CapturedAt int64            `json:"captured_at"`
 }
 
-// usageStaleAfter is how old a captured rate_limits.json may be before we treat
-// it as unavailable: past this, Claude Code hasn't run recently and the usage
-// percentages / reset times no longer reflect reality.
-const usageStaleAfter = 2 * time.Hour
-
-// readUsage loads rate-limit data captured by the statusline wrapper. Returns nil
-// if the file is missing, unparseable, or stale — older than usageStaleAfter
-// relative to now. A zero/missing captured_at is tolerated, since wrappers
-// predating that field still produce useful current data.
-func readUsage(accountPath string, now time.Time) *APIUsage {
+// readUsage loads the most recent rate-limit data captured by the statusline
+// wrapper. Returns nil only if the file is missing or unparseable; whatever was
+// last captured is always shown, regardless of age (the bar prefers stale-but-
+// real usage over a blank meter).
+func readUsage(accountPath string) *APIUsage {
 	data, err := os.ReadFile(filepath.Join(accountPath, "rate_limits.json"))
 	if err != nil {
 		return nil
 	}
 	var rl rateLimitsFile
 	if json.Unmarshal(data, &rl) != nil {
-		return nil
-	}
-	if t := capturedAtTime(rl.CapturedAt); !t.IsZero() && now.Sub(t) > usageStaleAfter {
 		return nil
 	}
 
@@ -96,21 +88,4 @@ func clampPct(v float64) float64 {
 		return 1.0
 	}
 	return v
-}
-
-// capturedAtTime interprets the wrapper's captured_at timestamp, which is Unix
-// seconds for the seconds-based statusline wrapper (matching resets_at in the
-// same file) and Unix milliseconds for the Date.now()-based one. Disambiguate by
-// magnitude: any realistic millisecond timestamp is >= 1e12, while a seconds
-// timestamp stays far below that until well past year 5000. A zero/negative
-// value means "absent" and yields the zero time.
-func capturedAtTime(v int64) time.Time {
-	switch {
-	case v <= 0:
-		return time.Time{}
-	case v >= 1_000_000_000_000: // >= 1e12 ⇒ milliseconds
-		return time.UnixMilli(v)
-	default: // Unix seconds
-		return time.Unix(v, 0)
-	}
 }
