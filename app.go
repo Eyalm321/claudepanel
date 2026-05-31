@@ -636,6 +636,8 @@ func (a *App) InstallUpdate(downloadURL string) error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
+	appPath = resolveRelaunchPath(appPath)
+
 	err = runSilentInstaller(tempInstallerPath, appPath)
 	if err != nil {
 		return fmt.Errorf("failed to run silent installer: %w", err)

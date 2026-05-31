@@ -4,9 +4,37 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 )
+
+func resolveRelaunchPath(currentPath string) string {
+	isDev := Version == "dev" || strings.Contains(strings.ToLower(currentPath), "claudebar")
+
+	if isDev {
+		candidates := []string{
+			filepath.Join(os.Getenv("ProgramFiles"), "ClaudePanel", "claudepanel.exe"),
+			filepath.Join(os.Getenv("ProgramFiles(x86)"), "ClaudePanel", "claudepanel.exe"),
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "ClaudePanel", "claudepanel.exe"),
+		}
+
+		for _, candidate := range candidates {
+			if candidate == "" {
+				continue
+			}
+			if _, err := os.Stat(candidate); err == nil {
+				log.Printf("[Updater] Dev mode detected. Resolving relaunch path to official installation: %s", candidate)
+				return candidate
+			}
+		}
+	}
+
+	return currentPath
+}
 
 func runSilentInstaller(installerPath, appPath string) error {
 	psCommand := fmt.Sprintf(
