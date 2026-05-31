@@ -37,16 +37,26 @@ type rateLimitsFile struct {
 	CapturedAt int64            `json:"captured_at"`
 }
 
-// ReadUsage loads rate-limit data captured by the statusline wrapper.
-// Returns nil if the file is missing or stale (>2h old, meaning Claude
-// Code hasn't been used recently and the data isn't representative).
-func readUsage(accountPath string) *APIUsage {
+// usageStaleAfter is how old a captured rate_limits.json may be before we treat
+// it as unavailable: past this, Claude Code hasn't run recently and the usage
+// percentages / reset times no longer reflect reality.
+const usageStaleAfter = 2 * time.Hour
+
+// readUsage loads rate-limit data captured by the statusline wrapper. Returns nil
+// if the file is missing, unparseable, or stale — older than usageStaleAfter
+// relative to now. captured_at is written by the wrapper as JavaScript Date.now()
+// (Unix milliseconds); a zero/missing captured_at is tolerated, since wrappers
+// predating that field still produce useful current data.
+func readUsage(accountPath string, now time.Time) *APIUsage {
 	data, err := os.ReadFile(filepath.Join(accountPath, "rate_limits.json"))
 	if err != nil {
 		return nil
 	}
 	var rl rateLimitsFile
 	if json.Unmarshal(data, &rl) != nil {
+		return nil
+	}
+	if rl.CapturedAt > 0 && now.Sub(time.UnixMilli(rl.CapturedAt)) > usageStaleAfter {
 		return nil
 	}
 

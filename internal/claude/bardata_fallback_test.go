@@ -46,12 +46,10 @@ func TestLoadBarData_MissingUsage(t *testing.T) {
 	}
 }
 
-// Stale rate_limits.json (captured_at older than the 2h cutoff) should be
-// treated as unavailable. SKIPPED: readUsage does not yet honour captured_at —
-// tracked in issue #5. Un-skip when that lands.
+// Stale rate_limits.json (captured_at older than the 2h cutoff) is treated as
+// unavailable, so the percent fields fall back to "no data" rather than showing
+// outdated usage.
 func TestLoadBarData_StaleUsage(t *testing.T) {
-	t.Skip("readUsage ignores captured_at; stale data is treated as live — see issue #5")
-
 	got, err := loadBarDataAt("testdata/stale_usage", "Acct", fixedNow)
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -64,6 +62,21 @@ func TestLoadBarData_StaleUsage(t *testing.T) {
 	}
 	if got.LimitExceeded {
 		t.Errorf("LimitExceeded = true, want false (stale data should not drive the limit flag)")
+	}
+}
+
+// rate_limits.json with no captured_at (older statusline wrappers) is tolerated
+// rather than treated as stale, so its live data still drives the bar.
+func TestLoadBarData_MissingCapturedAt(t *testing.T) {
+	got, err := loadBarDataAt("testdata/no_captured_at", "Acct", fixedNow)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got.PeriodMsgLimit != 1 {
+		t.Errorf("PeriodMsgLimit = %d, want 1 (live data without captured_at should still load)", got.PeriodMsgLimit)
+	}
+	if got.PeriodPercent != 40.0/100.0 {
+		t.Errorf("PeriodPercent = %v, want 0.4", got.PeriodPercent)
 	}
 }
 
