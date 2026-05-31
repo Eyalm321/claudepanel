@@ -42,10 +42,6 @@ func (a radioResolverAdapter) Resolve(ctx context.Context, videoID string, force
 // Version is set via -ldflags "-X main.Version=x.y.z" at build time.
 var Version = "dev"
 
-// Grace period after the cursor leaves the bar before we collapse it. Lets
-// the user briefly overshoot and come back without the bar snapping away.
-const collapseDelay = 200 * time.Millisecond
-
 type App struct {
 	app       *application.App
 	window    *application.WebviewWindow
@@ -84,10 +80,6 @@ type App struct {
 	// seam. The hover watcher below decides *when* to reveal/collapse and drives
 	// it via SetExpanded/Expanded (moving the watcher in is issue #3).
 	revealCtrl *reveal.Controller
-
-	// hover-watcher state
-	editorOpen bool
-	leftBarAt  time.Time // first tick the cursor was off the bar — zero while it's on
 
 	domReadyOnce bool // guards against WindowRuntimeReady firing twice on Windows WebView2
 }
@@ -239,93 +231,16 @@ func (a *App) domReady(app *application.App, window *application.WebviewWindow) 
 		}
 		platform.SetOpacity(a.hwnd, a.cfg.Opacity)
 		a.revealCtrl.Configure(a.monitors[a.cfg.Monitor], a.cfg.BarHeight, a.cfg.Pinned, a.cfg.ClickThrough)
-		// Pinned ⇒ always expanded; unpinned ⇒ follow the cursor. Init sets the
-		// initial state without animating and snaps the window off-screen +
-		// hides it if starting collapsed, so nothing flashes on launch.
-		a.revealCtrl.Init(a.cfg.Pinned || a.cursorOverBar())
+		// Init sets the initial visual state (pinned ⇒ expanded, else follow the
+		// cursor) without animating, snapping the window off-screen + hiding it
+		// if starting collapsed so nothing flashes on launch.
+		a.revealCtrl.Init()
 	}
 
 	a.runTray()
-	go a.runHoverWatcher()
-}
-
-// runHoverWatcher polls the cursor position and drives the bar's expand/collapse
-// when unpinned. WebView2's mouseleave is unreliable on small windows (it never
-// fires when the cursor exits at the bottom edge), so we don't trust JS events
-// for the hide trigger.
-func (a *App) runHoverWatcher() {
-	ticker := time.NewTicker(80 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-a.app.Context().Done():
-			return
-		case <-ticker.C:
-			a.checkHover()
-		}
-	}
-}
-
-// cursorOverBar reports whether the OS cursor is currently inside the bar's
-// monitor strip (top BarHeight pixels of the bar's monitor).
-func (a *App) cursorOverBar() bool {
-	if a.hwnd == 0 || len(a.monitors) == 0 {
-		return false
-	}
-	mon := a.monitors[a.cfg.Monitor]
-	cx, cy := platform.GetCursorPos()
-	if cx < 0 && cy < 0 {
-		return false // platform stub (macOS/Linux)
-	}
-	width := mon.PhysWidth
-	if width == 0 {
-		width = mon.Width
-	}
-	// The hover hit box runs from the monitor's true top edge down to the
-	// bar's bottom edge. On macOS the bar rests at Top+WorkTopOffset (below
-	// the menu bar); we still want cursor presence in the menu-bar slice
-	// above the bar to count as "on the bar" so the user can reveal it from
-	// the screen edge. On Windows/Linux WorkTopOffset is 0 and this collapses
-	// to the original [Top, Top+BarHeight] check.
-	return cx >= int(mon.Left) && cx < int(mon.Left)+width &&
-		cy >= int(mon.Top) && cy < int(mon.Top)+mon.WorkTopOffset+a.cfg.BarHeight
-}
-
-func (a *App) checkHover() {
-	if a.hwnd == 0 || a.editorOpen {
-		return
-	}
-	// Fullscreen takes precedence over pin/hover: while any frontmost-app
-	// main window is in native macOS fullscreen, force-collapse the bar (the
-	// tray icon stays). On Windows/Linux IsFullScreenActive is a stub and
-	// always returns false, so this is a no-op there.
-	if platform.IsFullScreenActive() {
-		if a.revealCtrl.Expanded() {
-			a.revealCtrl.SetExpanded(false)
-		}
-		return
-	}
-	if a.cfg.Pinned {
-		// Re-expand on exit-fullscreen if we suppressed earlier.
-		if !a.revealCtrl.Expanded() {
-			a.revealCtrl.SetExpanded(true)
-		}
-		return
-	}
-	if a.cursorOverBar() {
-		a.leftBarAt = time.Time{}
-		a.revealCtrl.SetExpanded(true)
-		return
-	}
-	// Cursor off the bar — start grace timer on the first off-tick; only
-	// collapse once the cursor has been gone for collapseDelay.
-	if a.leftBarAt.IsZero() {
-		a.leftBarAt = time.Now()
-		return
-	}
-	if a.revealCtrl.Expanded() && time.Since(a.leftBarAt) >= collapseDelay {
-		a.revealCtrl.SetExpanded(false)
-	}
+	// The reveal controller owns the cursor poll loop and the whole auto-hide
+	// state machine now; App just starts it.
+	go a.revealCtrl.Run(a.app.Context())
 }
 
 // reveal surfaces the bar, called when the user launches a second instance (which
@@ -788,12 +703,7 @@ func (a *App) SetPinned(pinned bool) error {
 		} else {
 			platform.PushdownDisable()
 		}
-		a.leftBarAt = time.Time{}
-		a.revealCtrl.Configure(a.monitors[a.cfg.Monitor], a.cfg.BarHeight, pinned, a.cfg.ClickThrough)
-		// Pinned ⇒ always expanded. Unpinned ⇒ initial state follows the
-		// cursor (the user just clicked the pin icon, so the cursor is on the
-		// bar; this avoids a flicker before the next polling tick).
-		a.revealCtrl.SetExpanded(pinned || a.cursorOverBar())
+		a.revealCtrl.SetPinned(pinned)
 	}
 	a.app.Event.Emit("pinned:changed", pinned)
 	return nil
@@ -801,15 +711,11 @@ func (a *App) SetPinned(pinned bool) error {
 
 // SetEditorOpen forces the bar fully expanded while the inline accounts editor
 // is shown (the editor is launched from the tray with the cursor off-bar, and
-// must stay open until dismissed). On close, the hover-watcher re-evaluates
-// based on the current cursor position.
+// must stay open until dismissed). On close, the controller re-evaluates based
+// on the current cursor position.
 func (a *App) SetEditorOpen(open bool) {
-	a.editorOpen = open
-	if open && !a.cfg.Pinned && a.revealCtrl != nil {
-		a.revealCtrl.SetExpanded(true)
-	}
-	if !open {
-		a.checkHover()
+	if a.revealCtrl != nil {
+		a.revealCtrl.SetEditorOpen(open)
 	}
 }
 

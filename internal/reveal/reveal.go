@@ -1,11 +1,13 @@
-// Package reveal owns the bar's slide animation and click-through state. It
-// talks to the OS only through the WindowOps seam, so the slide logic can be
-// exercised with a fake instead of a real window. The hover machine that decides
-// *when* to reveal or collapse still lives on App and drives this controller via
-// SetExpanded/Expanded; moving that in is issue #3.
+// Package reveal owns the bar's auto-hide state machine: the slide animation, the
+// cursor hover hit-test, the grace-period collapse timer, the
+// fullscreen/pinned/editor precedence rules, and the click-through state. It
+// talks to the OS only through the WindowOps seam (cursor + window ops), so the
+// whole machine can be exercised with a fake cursor + fake clock instead of a
+// real window. App owns only the OS poll loop, which calls Tick.
 package reveal
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +36,13 @@ type WindowOps interface {
 const (
 	defaultSlideDuration = 200 * time.Millisecond
 	defaultFrame         = 16 * time.Millisecond // ~60 fps
+	// defaultCollapseDelay is the grace period after the cursor leaves the bar
+	// before it collapses — lets the user briefly overshoot and come back.
+	defaultCollapseDelay = 200 * time.Millisecond
+	// defaultPoll is how often Run samples the cursor. WebView2's mouseleave is
+	// unreliable on small windows, so we poll the OS cursor rather than trust
+	// JS mouse events for the hide trigger.
+	defaultPoll = 80 * time.Millisecond
 )
 
 // platformOps is the production WindowOps: it binds the window handle and
@@ -59,11 +68,13 @@ func realTicker(d time.Duration) (<-chan time.Time, func()) {
 // It holds a geometry/mode snapshot pushed in via Configure (refreshed on dock /
 // pin / click-through changes) rather than reaching back into App config.
 type Controller struct {
-	ops       WindowOps
-	now       func() time.Time
-	newTicker func(time.Duration) (<-chan time.Time, func())
-	slide     time.Duration
-	frame     time.Duration
+	ops           WindowOps
+	now           func() time.Time
+	newTicker     func(time.Duration) (<-chan time.Time, func())
+	slide         time.Duration
+	frame         time.Duration
+	collapseDelay time.Duration
+	poll          time.Duration
 
 	// onDone, when non-nil, is invoked as each animateY goroutine returns (for
 	// any reason, including supersede). Test-only hook; nil in production.
@@ -76,6 +87,8 @@ type Controller struct {
 	pinned           bool
 	userClickThrough bool
 	expanded         bool
+	editorOpen       bool      // editor open forces expanded + suppresses hover collapse
+	leftBarAt        time.Time // first tick the cursor was off the bar — zero while it's on
 
 	// animGen is bumped on every SetExpanded; a running animateY exits once it
 	// sees the bump, so a new slide cleanly supersedes an in-flight one.
@@ -91,11 +104,13 @@ func New(hwnd uintptr) *Controller {
 // real clock/ticker + default durations, which in-package tests may override.
 func newWithOps(ops WindowOps) *Controller {
 	return &Controller{
-		ops:       ops,
-		now:       time.Now,
-		newTicker: realTicker,
-		slide:     defaultSlideDuration,
-		frame:     defaultFrame,
+		ops:           ops,
+		now:           time.Now,
+		newTicker:     realTicker,
+		slide:         defaultSlideDuration,
+		frame:         defaultFrame,
+		collapseDelay: defaultCollapseDelay,
+		poll:          defaultPoll,
 	}
 }
 
@@ -150,13 +165,18 @@ func (c *Controller) SetUserClickThrough(enabled bool) {
 	c.ApplyClickThrough()
 }
 
-// Init sets the initial visual state without animating. When starting collapsed
-// it snaps the window above the screen edge and hides it so nothing flashes on
-// launch. Call after Configure.
-func (c *Controller) Init(expanded bool) {
+// Init sets the initial visual state without animating: pinned ⇒ expanded, else
+// follow the cursor. When starting collapsed it snaps the window above the screen
+// edge and hides it so nothing flashes on launch. Call after Configure.
+func (c *Controller) Init() {
+	c.mu.Lock()
+	s := snapshot{c.mon, c.barHeight, c.pinned, c.userClickThrough, false}
+	c.mu.Unlock()
+
+	expanded := s.pinned || c.cursorOverBar(s)
+	s.expanded = expanded
 	c.mu.Lock()
 	c.expanded = expanded
-	s := snapshot{c.mon, c.barHeight, c.pinned, c.userClickThrough, expanded}
 	c.mu.Unlock()
 
 	c.ApplyClickThrough()
@@ -214,6 +234,117 @@ func (c *Controller) ApplyClickThrough() {
 	s := c.snap()
 	autoHide := c.ops.AutoHideSupported() && !s.pinned && !s.expanded
 	c.ops.SetClickThrough(s.userClickThrough || autoHide)
+}
+
+// cursorOverBar reports whether the OS cursor is inside the bar's hit box: the
+// monitor's full width, from its true top edge down to the bar's bottom. The
+// menu-bar slice above the bar (macOS WorkTopOffset) counts as "on the bar" so
+// the user can reveal it from the screen edge; on Windows/Linux WorkTopOffset is
+// 0 and this is just [Top, Top+BarHeight].
+func (c *Controller) cursorOverBar(s snapshot) bool {
+	cx, cy := c.ops.CursorPos()
+	if cx < 0 && cy < 0 {
+		return false // platform stub (no cursor source)
+	}
+	width := widthOf(s.mon)
+	return cx >= int(s.mon.Left) && cx < int(s.mon.Left)+width &&
+		cy >= int(s.mon.Top) && cy < int(s.mon.Top)+s.mon.WorkTopOffset+s.barHeight
+}
+
+// SetEditorOpen forces the bar expanded while the inline accounts editor is shown
+// (it's launched with the cursor off-bar and must stay open until dismissed). On
+// close, the machine re-evaluates against the current cursor position.
+func (c *Controller) SetEditorOpen(open bool) {
+	c.mu.Lock()
+	c.editorOpen = open
+	pinned := c.pinned
+	c.mu.Unlock()
+
+	if open && !pinned {
+		c.SetExpanded(true)
+	}
+	if !open {
+		c.Tick()
+	}
+}
+
+// SetPinned applies a pin-state change: pinned ⇒ always expanded; unpinned ⇒
+// follow the cursor (the user just clicked the pin icon, so the cursor is on the
+// bar — avoids a flicker before the next poll). Resets the grace timer.
+func (c *Controller) SetPinned(pinned bool) {
+	c.mu.Lock()
+	c.pinned = pinned
+	c.leftBarAt = time.Time{}
+	s := snapshot{c.mon, c.barHeight, pinned, c.userClickThrough, c.expanded}
+	c.mu.Unlock()
+
+	c.ApplyClickThrough()
+	c.SetExpanded(pinned || c.cursorOverBar(s))
+}
+
+// Tick advances the auto-hide state machine one step from the current cursor
+// position; the OS cursor poller (Run) calls it. Precedence: editor-open and
+// pinned force expanded, fullscreen forces collapsed, otherwise the bar follows
+// the cursor and collapses after the grace delay once the cursor has left.
+func (c *Controller) Tick() {
+	c.mu.Lock()
+	if !c.configured || c.editorOpen {
+		c.mu.Unlock()
+		return
+	}
+	s := snapshot{c.mon, c.barHeight, c.pinned, c.userClickThrough, c.expanded}
+	c.mu.Unlock()
+
+	// Fullscreen takes precedence over pin/hover: while a frontmost app is in
+	// native fullscreen, force-collapse the bar (the tray icon stays). On
+	// platforms with no fullscreen detection this is a no-op.
+	if c.ops.FullScreenActive() {
+		if c.Expanded() {
+			c.SetExpanded(false)
+		}
+		return
+	}
+	if s.pinned {
+		if !c.Expanded() {
+			c.SetExpanded(true)
+		}
+		return
+	}
+	if c.cursorOverBar(s) {
+		c.mu.Lock()
+		c.leftBarAt = time.Time{}
+		c.mu.Unlock()
+		c.SetExpanded(true)
+		return
+	}
+	// Cursor off the bar — start the grace timer on the first off-tick; only
+	// collapse once it's been gone for collapseDelay.
+	c.mu.Lock()
+	if c.leftBarAt.IsZero() {
+		c.leftBarAt = c.now()
+		c.mu.Unlock()
+		return
+	}
+	graceElapsed := c.now().Sub(c.leftBarAt) >= c.collapseDelay
+	c.mu.Unlock()
+	if graceElapsed && c.Expanded() {
+		c.SetExpanded(false)
+	}
+}
+
+// Run polls the cursor every c.poll and drives the machine via Tick until ctx is
+// cancelled. App starts this once the native window handle is known.
+func (c *Controller) Run(ctx context.Context) {
+	ticker := time.NewTicker(c.poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.Tick()
+		}
+	}
 }
 
 // animateY slides the window's top edge to targetY over c.slide with an ease-out

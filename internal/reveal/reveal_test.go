@@ -53,10 +53,11 @@ func (f *fakeOps) CursorPos() (int, int) {
 func (f *fakeOps) FullScreenActive() bool  { f.mu.Lock(); defer f.mu.Unlock(); return f.fullScreen }
 func (f *fakeOps) AutoHideSupported() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.autoHide }
 
-func (f *fakeOps) setPos(x, y int) { f.mu.Lock(); f.x, f.y = x, y; f.mu.Unlock() }
-func (f *fakeOps) moveCount() int  { f.mu.Lock(); defer f.mu.Unlock(); return len(f.moves) }
-func (f *fakeOps) hideCount() int  { f.mu.Lock(); defer f.mu.Unlock(); return f.hides }
-func (f *fakeOps) lastMove() point { f.mu.Lock(); defer f.mu.Unlock(); return f.moves[len(f.moves)-1] }
+func (f *fakeOps) setPos(x, y int)    { f.mu.Lock(); f.x, f.y = x, y; f.mu.Unlock() }
+func (f *fakeOps) setCursor(x, y int) { f.mu.Lock(); f.cursorX, f.cursorY = x, y; f.mu.Unlock() }
+func (f *fakeOps) moveCount() int     { f.mu.Lock(); defer f.mu.Unlock(); return len(f.moves) }
+func (f *fakeOps) hideCount() int     { f.mu.Lock(); defer f.mu.Unlock(); return f.hides }
+func (f *fakeOps) lastMove() point    { f.mu.Lock(); defer f.mu.Unlock(); return f.moves[len(f.moves)-1] }
 func (f *fakeOps) lastClickThrough() (bool, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -184,7 +185,9 @@ func TestNewRevealSupersedesInFlight(t *testing.T) {
 	done := make(chan uint64, 4)
 	c := newTestController(fake, clk, func(g uint64) { done <- g })
 	c.Configure(testMon(), barHeight, false, false)
-	c.Init(true) // expanded
+	c.mu.Lock()
+	c.expanded = true // start expanded (skip the initial slide-in)
+	c.mu.Unlock()
 
 	// Begin collapsing (generation 1).
 	c.SetExpanded(false)
@@ -245,8 +248,17 @@ func TestApplyClickThrough(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &fakeOps{autoHide: tc.autoHide}
 			c := newWithOps(fake)
-			c.Configure(testMon(), barHeight, tc.pinned, tc.userCT)
-			c.Init(tc.expanded)
+			// Set the state directly: pinned+collapsed can't arise via Init
+			// (pinned forces expanded), but ApplyClickThrough must still handle it.
+			c.mu.Lock()
+			c.configured = true
+			c.mon = testMon()
+			c.barHeight = barHeight
+			c.pinned = tc.pinned
+			c.expanded = tc.expanded
+			c.userClickThrough = tc.userCT
+			c.mu.Unlock()
+			c.ApplyClickThrough()
 			got, ok := fake.lastClickThrough()
 			if !ok {
 				t.Fatal("SetClickThrough was never called")
