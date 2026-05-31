@@ -24,7 +24,7 @@ func loadBarDataAt(accountPath, accountName string, now time.Time) (*BarData, er
 	creds, _ := readCredentials(accountPath)
 	sessions := readSessions(accountPath)
 	notifs := readNotifications(accountPath)
-	apiUsage := readUsage(accountPath)
+	apiUsage := readUsage(accountPath, now)
 
 	return computeBarData(accountName, sc, creds, sessions, notifs, apiUsage, now), nil
 }
