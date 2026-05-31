@@ -80,6 +80,40 @@ func TestLoadBarData_MissingCapturedAt(t *testing.T) {
 	}
 }
 
+// captured_at in Unix SECONDS (the real statusline wrapper's format, matching
+// resets_at in the same file) is interpreted correctly: a fresh seconds
+// timestamp loads its live data. Regression guard for the units bug that dropped
+// all live usage when captured_at was misread as milliseconds.
+func TestLoadBarData_FreshSecondsCapturedAt(t *testing.T) {
+	got, err := loadBarDataAt("testdata/fresh_seconds", "Acct", fixedNow)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got.PeriodMsgLimit != 1 {
+		t.Errorf("PeriodMsgLimit = %d, want 1 (fresh seconds-based captured_at should load)", got.PeriodMsgLimit)
+	}
+	if got.PeriodPercent != 37.0/100.0 {
+		t.Errorf("PeriodPercent = %v, want 0.37", got.PeriodPercent)
+	}
+	if got.HourlyPercent != 35.0/100.0 {
+		t.Errorf("HourlyPercent = %v, want 0.35", got.HourlyPercent)
+	}
+	if got.PrimaryModel != "OPUS 4.8" {
+		t.Errorf("PrimaryModel = %q, want OPUS 4.8 (from rate_limits model_id)", got.PrimaryModel)
+	}
+}
+
+// A seconds-based captured_at older than the cutoff is still detected as stale.
+func TestLoadBarData_StaleSecondsCapturedAt(t *testing.T) {
+	got, err := loadBarDataAt("testdata/stale_seconds", "Acct", fixedNow)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got.PeriodMsgLimit != 0 {
+		t.Errorf("PeriodMsgLimit = %d, want 0 (stale seconds-based captured_at should be unavailable)", got.PeriodMsgLimit)
+	}
+}
+
 // Source-of-truth, reset case: live weekly usage is below 100% but the sticky
 // notification file still says the limit was breached. The live value wins, so
 // the bar does NOT stay red after a reset.
