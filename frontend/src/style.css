@@ -388,6 +388,49 @@ html, body {
   color: var(--text) !important;
 }
 
+/* ── Modern flat transport buttons ──
+   Compact ghost-chip controls sized for the 28px bar: a faint translucent
+   fill + hairline border, no bevels, gradients, or shadows. Scoped to
+   #seg-radio so the other cyclers' flat .arrow glyphs (account / term / mon
+   / theme) are untouched. */
+#seg-radio .arrow,
+#seg-radio .radio-btn {
+  height: 16px;
+  min-width: 16px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+#seg-radio .arrow:hover,
+#seg-radio .radio-btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+#seg-radio .arrow:active,
+#seg-radio .radio-btn:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+/* Tighten neighbouring transport keys into a cluster (the marquee title
+   splits them into [« ‹] and [› » ▶ ⤬]) without going fully flush. */
+#seg-radio .arrow + .arrow,
+#seg-radio .arrow + .radio-btn,
+#seg-radio .radio-btn + .arrow,
+#seg-radio .radio-btn + .radio-btn {
+  margin-left: -3px;
+}
+/* Disabled track arrows ride the shared .arrow.is-disabled dimming; just
+   mute the fill so a dead key recedes. */
+#seg-radio .arrow.is-disabled,
+#seg-radio .arrow.is-disabled:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
 .radio-title-wrap {
   width: 75px;
   overflow: hidden;
@@ -440,14 +483,19 @@ html, body {
 /* Playing: swap to the pause bars and pulse green like the old soundwave. */
 #radio-status.playing .ico-play  { display: none; }
 #radio-status.playing .ico-pause { display: inline-block; }
+/* Pulse the glyph, not the whole button, so the beveled frame stays solid. */
 #radio-status.playing {
-  animation: soundwave 1.5s ease infinite;
   color: var(--green) !important;
+}
+#radio-status.playing .ico-pause {
+  animation: soundwave 1.5s ease infinite;
 }
 /* Loading: pulse the play icon in clay so a click gives immediate feedback
    while the stream resolves (replaces the old [LOAD] text). */
 #radio-status.loading {
   color: var(--clay) !important;
+}
+#radio-status.loading .ico-play {
   animation: radio-pulse 0.8s ease-in-out infinite;
 }
 @keyframes radio-pulse {
@@ -462,8 +510,8 @@ html, body {
    hides it and fills it, so re-show it and flip fill→stroke here. */
 #btn-radio-shuffle .radio-ico {
   display: inline-block;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;
