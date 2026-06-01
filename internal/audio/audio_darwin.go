@@ -8,6 +8,7 @@ package audio
 
 void* createDarwinPlayer(void* goPlayer);
 void playDarwinPlayer(void* playerPtr, const char* url);
+void resumeDarwinPlayer(void* playerPtr);
 void pauseDarwinPlayer(void* playerPtr);
 void stopDarwinPlayer(void* playerPtr);
 void setVolumeDarwinPlayer(void* playerPtr, float vol);
@@ -80,6 +81,14 @@ func (p *DarwinPlayer) Pause() error {
 	defer p.mu.Unlock()
 
 	C.pauseDarwinPlayer(p.ptr)
+	return nil
+}
+
+func (p *DarwinPlayer) Resume() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	C.resumeDarwinPlayer(p.ptr)
 	return nil
 }
 

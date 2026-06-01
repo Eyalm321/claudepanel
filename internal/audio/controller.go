@@ -143,6 +143,24 @@ func (c *Controller) PlayVideo(ctx context.Context, videoID string) error {
 	return nil
 }
 
+// Resume continues the current track from where Pause left off, without
+// re-resolving the stream or restarting from the beginning. No-op if nothing has
+// been played yet. Emits StatePlaying immediately so the UI flips without waiting
+// for the next poll.
+func (c *Controller) Resume() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.activeVideoID == "" {
+		return nil
+	}
+	if err := c.player.Resume(); err != nil {
+		return err
+	}
+	c.currentState = StatePlaying
+	c.emit(Event{State: StatePlaying, VideoID: c.activeVideoID})
+	return nil
+}
+
 func (c *Controller) Pause() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

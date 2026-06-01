@@ -56,6 +56,8 @@ while ($line = [Console]::ReadLine()) {
             $source = [Windows.Media.Core.MediaSource]::CreateFromUri($uri)
             $player.Source = $source
             $player.Play()
+        } elseif ($line -eq "resume") {
+            $player.Play()
         } elseif ($line -eq "pause") {
             $player.Pause()
         } elseif ($line -eq "stop") {
@@ -174,6 +176,16 @@ func (p *WindowsPlayer) Play(url string) error {
 		return fmt.Errorf("player not initialized or closed")
 	}
 	_, err := fmt.Fprintf(p.stdin, "play %s\n", url)
+	return err
+}
+
+func (p *WindowsPlayer) Resume() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.stdin == nil {
+		return fmt.Errorf("player not initialized or closed")
+	}
+	_, err := fmt.Fprintln(p.stdin, "resume")
 	return err
 }
 

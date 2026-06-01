@@ -10,6 +10,7 @@ import (
 type mockPlayer struct {
 	mu            sync.Mutex
 	playFunc      func(url string) error
+	resumeFunc    func() error
 	pauseFunc     func() error
 	stopFunc      func() error
 	setVolumeFunc func(v float64) error
@@ -21,6 +22,15 @@ func (m *mockPlayer) Play(url string) error {
 	defer m.mu.Unlock()
 	if m.playFunc != nil {
 		return m.playFunc(url)
+	}
+	return nil
+}
+
+func (m *mockPlayer) Resume() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.resumeFunc != nil {
+		return m.resumeFunc()
 	}
 	return nil
 }

@@ -96,6 +96,22 @@ func (p *LinuxPlayer) Play(url string) error {
 	return nil
 }
 
+func (p *LinuxPlayer) Resume() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Resume from the paused position: just move back to PLAYING without
+	// re-setting the URI (which would restart the track from the beginning).
+	ret := C.gst_element_set_state(p.playbin, C.GST_STATE_PLAYING)
+	if ret == C.GST_STATE_CHANGE_FAILURE {
+		return fmt.Errorf("failed to set GStreamer state to PLAYING")
+	}
+
+	p.playing = true
+	p.emit(Event{State: StatePlaying})
+	return nil
+}
+
 func (p *LinuxPlayer) Pause() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

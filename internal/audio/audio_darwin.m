@@ -121,6 +121,13 @@ void playDarwinPlayer(void* playerPtr, const char* urlStr) {
     [state->player play];
 }
 
+void resumeDarwinPlayer(void* playerPtr) {
+    DarwinPlayerState* state = (DarwinPlayerState*)playerPtr;
+    // Resume the already-loaded item from its paused position (no
+    // replaceCurrentItem, so it does not restart from the beginning).
+    [state->player play];
+}
+
 void pauseDarwinPlayer(void* playerPtr) {
     DarwinPlayerState* state = (DarwinPlayerState*)playerPtr;
     [state->player pause];

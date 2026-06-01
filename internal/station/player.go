@@ -6,10 +6,15 @@ import (
 	"log"
 	"math/rand"
 	"sync"
+	"time"
 
 	"claudepanel/internal/audio"
 	"claudepanel/internal/config"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 var errStationRange = errors.New("station index out of range")
 
@@ -17,6 +22,7 @@ var errStationRange = errors.New("station index out of range")
 // Kept as an interface so the queue logic can be unit-tested with a fake.
 type trackController interface {
 	PlayVideo(ctx context.Context, videoID string) error
+	Resume() error
 	Pause() error
 	Stop() error
 	SetVolume(v float64) error
@@ -76,8 +82,8 @@ func (s *StationPlayer) SetStations(st []config.StationConfig) {
 }
 
 // Play (re)starts the station at stationIdx. If it is already the active
-// station and a queue exists, it resumes the current track instead of
-// rebuilding (so pause→play of the same station keeps your place).
+// station and a queue exists, it resumes the current track from its paused
+// position instead of rebuilding (so pause→play keeps your exact place).
 func (s *StationPlayer) Play(stationIdx int) error {
 	s.mu.Lock()
 	if stationIdx < 0 || stationIdx >= len(s.stations) {
@@ -85,14 +91,12 @@ func (s *StationPlayer) Play(stationIdx int) error {
 		return errStationRange
 	}
 
-	// Resume same station's current track.
+	// Resume same station from the exact paused position (no reshuffle, no
+	// restart — the controller continues the already-loaded track).
 	if stationIdx == s.activeIdx && len(s.queue) > 0 {
 		s.paused = false
-		id := s.queue[s.cur]
-		epoch := s.epoch
 		s.mu.Unlock()
-		go s.playTrack(epoch, id)
-		return nil
+		return s.ctrl.Resume()
 	}
 
 	// Switch / fresh start.
@@ -120,26 +124,35 @@ func (s *StationPlayer) Play(stationIdx int) error {
 
 // buildAndStart flattens the station into the queue and starts playback. For
 // sequential stations it appends incrementally and starts the moment the first
-// track is known; for shuffled stations it expands everything, shuffles, then
-// starts (so the shuffle covers the whole collection).
+// track is known; for shuffled stations it expands everything, then starts at a
+// random track (so the shuffle covers the whole collection).
 func (s *StationPlayer) buildAndStart(epoch uint64, station config.StationConfig, ctx context.Context) {
 	started := false
 	for _, item := range station.Items {
 		if s.epochChanged(epoch) {
 			return
 		}
+
+		// Re-parse on the fly to dynamically upgrade any legacy saved items
+		actualItem := item
+		if item.Raw != "" {
+			if parsed, err := ParseItem(item.Raw); err == nil {
+				actualItem = parsed
+			}
+		}
+
 		var ids []string
-		switch item.Kind {
+		switch actualItem.Kind {
 		case config.ItemPlaylist:
-			got, err := s.resolver.ExpandPlaylist(ctx, item.ID, false)
+			got, err := s.resolver.ExpandPlaylist(ctx, actualItem.ID, false)
 			if err != nil {
-				log.Printf("[station] expand playlist %s failed: %v", item.ID, err)
+				log.Printf("[station] expand playlist %s failed: %v", actualItem.ID, err)
 				continue
 			}
 			ids = got
 		default:
-			if item.ID != "" {
-				ids = []string{item.ID}
+			if actualItem.ID != "" {
+				ids = []string{actualItem.ID}
 			}
 		}
 		if len(ids) == 0 {
@@ -166,7 +179,7 @@ func (s *StationPlayer) buildAndStart(epoch uint64, station config.StationConfig
 		}
 	}
 
-	// Finalize: shuffle-and-start, or report an empty station.
+	// Finalize: shuffle-start at a random track, or report an empty station.
 	s.mu.Lock()
 	if epoch != s.epoch {
 		s.mu.Unlock()
@@ -179,9 +192,8 @@ func (s *StationPlayer) buildAndStart(epoch uint64, station config.StationConfig
 		return
 	}
 	if station.Shuffle && !started {
-		rand.Shuffle(len(s.queue), func(i, j int) { s.queue[i], s.queue[j] = s.queue[j], s.queue[i] })
-		s.cur = 0
-		startID := s.queue[0]
+		s.cur = rand.Intn(len(s.queue))
+		startID := s.queue[s.cur]
 		s.mu.Unlock()
 		go s.playTrack(epoch, startID)
 		return
@@ -276,18 +288,42 @@ func (s *StationPlayer) OnAudioEvent(ev audio.Event) {
 	}
 }
 
-// advanceLocked moves cur to the next track, wrapping to 0 at the end and
-// reshuffling each loop when shuffle is on. Caller holds s.mu.
+// advanceLocked moves cur to the next track. With shuffle on it jumps to a
+// random track other than the current one (so auto-advance order is random with
+// no immediate repeats); otherwise it steps sequentially, wrapping to 0 (loop).
+// Caller holds s.mu.
 func (s *StationPlayer) advanceLocked() (string, bool) {
-	if len(s.queue) == 0 {
+	n := len(s.queue)
+	if n == 0 {
 		return "", false
 	}
-	s.cur++
-	if s.cur >= len(s.queue) {
-		s.cur = 0
-		if s.shuffle && len(s.queue) > 1 {
-			rand.Shuffle(len(s.queue), func(i, j int) { s.queue[i], s.queue[j] = s.queue[j], s.queue[i] })
+	if s.shuffle && n > 1 {
+		// Pick uniformly among the n-1 tracks that aren't current.
+		next := rand.Intn(n - 1)
+		if next >= s.cur {
+			next++
 		}
+		s.cur = next
+	} else {
+		s.cur++
+		if s.cur >= n {
+			s.cur = 0
+		}
+	}
+	return s.queue[s.cur], true
+}
+
+// retreatLocked moves cur to the previous track, wrapping to the end. It always
+// steps sequentially (there's no shuffle play-history to walk back through), so
+// it's the natural inverse of "next track". Caller holds s.mu.
+func (s *StationPlayer) retreatLocked() (string, bool) {
+	n := len(s.queue)
+	if n == 0 {
+		return "", false
+	}
+	s.cur--
+	if s.cur < 0 {
+		s.cur = n - 1
 	}
 	return s.queue[s.cur], true
 }
@@ -319,6 +355,24 @@ func (s *StationPlayer) Pause() error {
 	return s.ctrl.Pause()
 }
 
+// SetShuffle sets the shuffle mode for the station at stationIdx (in memory;
+// config persistence is the app's job). It is a pure mode toggle: it records the
+// flag and, for the active station, updates the live shuffle state so subsequent
+// auto-advance (and manual Next) is randomized. It never starts, stops, or jumps
+// playback — toggling shuffle while paused stays paused, and while playing the
+// current track keeps playing until it ends.
+func (s *StationPlayer) SetShuffle(stationIdx int, on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if stationIdx >= 0 && stationIdx < len(s.stations) {
+		s.stations[stationIdx].Shuffle = on
+	}
+	if stationIdx == s.activeIdx {
+		s.shuffle = on
+	}
+	return nil
+}
+
 // Next manually advances to the next track within the active station.
 func (s *StationPlayer) Next() error {
 	s.mu.Lock()
@@ -327,6 +381,22 @@ func (s *StationPlayer) Next() error {
 		return nil
 	}
 	id, ok := s.advanceLocked()
+	epoch := s.epoch
+	s.mu.Unlock()
+	if ok {
+		go s.playTrack(epoch, id)
+	}
+	return nil
+}
+
+// Prev manually steps back to the previous track within the active station.
+func (s *StationPlayer) Prev() error {
+	s.mu.Lock()
+	if len(s.queue) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	id, ok := s.retreatLocked()
 	epoch := s.epoch
 	s.mu.Unlock()
 	if ok {

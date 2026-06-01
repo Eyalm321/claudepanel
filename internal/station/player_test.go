@@ -12,10 +12,11 @@ import (
 )
 
 type fakeController struct {
-	mu        sync.Mutex
-	played    chan string
-	stopCount int
-	failIDs   map[string]bool
+	mu          sync.Mutex
+	played      chan string
+	stopCount   int
+	resumeCount int
+	failIDs     map[string]bool
 }
 
 func newFakeController() *fakeController {
@@ -34,6 +35,17 @@ func (f *fakeController) PlayVideo(ctx context.Context, id string) error {
 }
 func (f *fakeController) Pause() error            { return nil }
 func (f *fakeController) SetVolume(float64) error { return nil }
+func (f *fakeController) Resume() error {
+	f.mu.Lock()
+	f.resumeCount++
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeController) resumes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.resumeCount
+}
 func (f *fakeController) Stop() error {
 	f.mu.Lock()
 	f.stopCount++
@@ -286,5 +298,213 @@ func (b *blockingExpander) ExpandPlaylist(ctx context.Context, id string, force 
 		return nil, ctx.Err()
 	case <-time.After(2 * time.Second):
 		return b.ids, nil
+	}
+}
+
+func TestShuffleStartPlaysRandomQueueTrack(t *testing.T) {
+	fc := newFakeController()
+	fe := &fakeExpander{m: map[string][]string{"P": {"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10"}}}
+	s := newWithController(fc, fe, func(audio.Event) {})
+	s.SetStations([]config.StationConfig{{
+		Name:    "S",
+		Shuffle: true,
+		Items: []config.StationItem{
+			{Kind: config.ItemPlaylist, ID: "P"},
+		},
+	}})
+
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Shuffle picks a random *start index*; the queue itself keeps playlist
+	// order (we no longer mutate the slice).
+	firstPlayed := nextPlayed(t, fc)
+	waitQueueLen(t, s, 10)
+
+	s.mu.Lock()
+	startID := s.queue[s.cur]
+	inQueue := false
+	for _, id := range s.queue {
+		if id == firstPlayed {
+			inQueue = true
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if !inQueue {
+		t.Fatalf("first played %q is not in the queue", firstPlayed)
+	}
+	if firstPlayed != startID {
+		t.Fatalf("first played = %q, but queue[cur] = %q", firstPlayed, startID)
+	}
+}
+
+func TestAdvanceShuffleNoImmediateRepeat(t *testing.T) {
+	s := &StationPlayer{queue: []string{"a", "b", "c", "d", "e"}, shuffle: true}
+	for i := 0; i < 200; i++ {
+		prev := s.cur
+		id, ok := s.advanceLocked()
+		if !ok {
+			t.Fatal("advanceLocked returned ok=false on a non-empty queue")
+		}
+		if s.cur == prev {
+			t.Fatalf("shuffle advance repeated the current index %d", prev)
+		}
+		if id != s.queue[s.cur] {
+			t.Fatalf("returned id %q != queue[cur] %q", id, s.queue[s.cur])
+		}
+	}
+}
+
+func TestSetShuffleIsModeOnlyToggle(t *testing.T) {
+	fc := newFakeController()
+	fe := &fakeExpander{m: map[string][]string{"P": {"p1", "p2", "p3", "p4", "p5"}}}
+	s := newWithController(fc, fe, func(audio.Event) {})
+	s.SetStations([]config.StationConfig{{
+		Name:    "S",
+		Shuffle: false,
+		Items: []config.StationItem{
+			{Kind: config.ItemPlaylist, ID: "P"},
+		},
+	}})
+
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+	first := nextPlayed(t, fc) // sequential start → p1
+	waitQueueLen(t, s, 5)
+
+	// Toggling shuffle is a pure mode change: it must not start, stop, or jump
+	// playback (so toggling it while paused stays paused).
+	if err := s.SetShuffle(0, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-fc.played:
+		t.Fatalf("shuffle toggle triggered playback (played %q); it should be mode-only", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	s.mu.Lock()
+	on := s.shuffle
+	s.mu.Unlock()
+	if !on {
+		t.Fatal("expected shuffle flag to be on")
+	}
+
+	// The mode still takes effect on the next advance: shuffle picks a track
+	// other than the current one.
+	if err := s.Next(); err != nil {
+		t.Fatal(err)
+	}
+	if jumped := nextPlayed(t, fc); jumped == first {
+		t.Fatalf("shuffled advance replayed the same track %q", jumped)
+	}
+}
+
+func TestPrevStepsBackwardWithWrap(t *testing.T) {
+	fc := newFakeController()
+	fe := &fakeExpander{m: map[string][]string{"P": {"p1", "p2", "p3"}}}
+	s := newWithController(fc, fe, func(audio.Event) {})
+	s.SetStations([]config.StationConfig{{
+		Name:  "S",
+		Items: []config.StationItem{{Kind: config.ItemPlaylist, ID: "P"}},
+	}})
+
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextPlayed(t, fc); got != "p1" {
+		t.Fatalf("sequential start = %q, want p1", got)
+	}
+	waitQueueLen(t, s, 3)
+
+	// Prev from the first track wraps to the last.
+	if err := s.Prev(); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextPlayed(t, fc); got != "p3" {
+		t.Fatalf("prev from first = %q, want p3 (wrap to end)", got)
+	}
+	// Prev again steps back one more.
+	if err := s.Prev(); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextPlayed(t, fc); got != "p2" {
+		t.Fatalf("prev = %q, want p2", got)
+	}
+}
+
+func TestPlayResumesViaController(t *testing.T) {
+	fc := newFakeController()
+	fe := &fakeExpander{m: map[string][]string{"P": {"p1", "p2", "p3"}}}
+	s := newWithController(fc, fe, func(audio.Event) {})
+	s.SetStations([]config.StationConfig{{
+		Name:    "S",
+		Shuffle: false,
+		Items: []config.StationItem{
+			{Kind: config.ItemPlaylist, ID: "P"},
+		},
+	}})
+
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+	_ = nextPlayed(t, fc) // p1
+	waitQueueLen(t, s, 3)
+
+	if err := s.Pause(); err != nil {
+		t.Fatal(err)
+	}
+	// Re-play the active station: this must RESUME (continue the loaded track),
+	// not start a new PlayVideo from the beginning.
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-fc.played:
+		t.Fatalf("resume should not call PlayVideo, but played %q", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if got := fc.resumes(); got != 1 {
+		t.Fatalf("expected exactly 1 Resume call, got %d", got)
+	}
+}
+
+func TestLegacyUpgradeOnTheFly(t *testing.T) {
+	fc := newFakeController()
+	fe := &fakeExpander{m: map[string][]string{"PLAbcdEfGhIjKlMnOpQrSt": {"p1", "p2"}}}
+	s := newWithController(fc, fe, func(audio.Event) {})
+	
+	// Item is saved as ItemVideo with ID of a video, but Raw contains list= playlist parameter.
+	s.SetStations([]config.StationConfig{{
+		Name:    "Legacy Station",
+		Shuffle: false,
+		Items: []config.StationItem{
+			{
+				Kind: config.ItemVideo,
+				ID:   "EWrX250Zhko",
+				Raw:  "https://www.youtube.com/watch?v=EWrX250Zhko&list=PLAbcdEfGhIjKlMnOpQrSt",
+			},
+		},
+	}})
+
+	if err := s.Play(0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Playlist should expand on the fly.
+	waitQueueLen(t, s, 2)
+	s.mu.Lock()
+	got := append([]string(nil), s.queue...)
+	s.mu.Unlock()
+
+	want := []string{"p1", "p2"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected expanded playlist queue %v, got %v", want, got)
+		}
 	}
 }

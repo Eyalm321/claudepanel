@@ -216,6 +216,17 @@ export function Quit() {
 }
 
 /**
+ * RadioNext skips to the next track in the active station's queue. It's a no-op
+ * when the radio is disabled or nothing has been queued yet (e.g. never played).
+ * The bar's › track button drives this; it's grayed out for single-track and
+ * livestream stations where there's nothing to step through.
+ * @returns {$CancellablePromise<void>}
+ */
+export function RadioNext() {
+    return $Call.ByID(4232239333);
+}
+
+/**
  * @returns {$CancellablePromise<void>}
  */
 export function RadioPause() {
@@ -234,11 +245,48 @@ export function RadioPlayStation(index) {
 }
 
 /**
+ * RadioPrev steps back to the previous track in the active station's queue. It's
+ * a no-op when the radio is disabled or nothing has been queued yet. The bar's ‹
+ * track button drives this.
+ * @returns {$CancellablePromise<void>}
+ */
+export function RadioPrev() {
+    return $Call.ByID(1848533721);
+}
+
+/**
+ * RadioSetShuffle toggles shuffle mode for the station at index, persists it to
+ * config, and applies it live to the station engine. It is a pure mode toggle:
+ * it changes only the random-order setting and never starts or jumps playback,
+ * so toggling while paused stays paused. The bar's shuffle button drives this
+ * (the setting was removed from the stations editor).
+ * @param {number} index
+ * @param {boolean} on
+ * @returns {$CancellablePromise<void>}
+ */
+export function RadioSetShuffle(index, on) {
+    return $Call.ByID(2403727805, index, on);
+}
+
+/**
  * @param {number} v
  * @returns {$CancellablePromise<void>}
  */
 export function RadioSetVolume(v) {
     return $Call.ByID(3673750934, v);
+}
+
+/**
+ * RadioStationHasTracks reports whether the station at index has more than one
+ * track to step through, so the bar can enable/gray-out its ‹ › track buttons.
+ * It's derived from config alone (no playback or network) and recognises
+ * playlists even when an item's saved kind is a stale "video" hint — e.g. a
+ * watch?v=…&list=… URL. Out-of-range indexes return false.
+ * @param {number} index
+ * @returns {$CancellablePromise<boolean>}
+ */
+export function RadioStationHasTracks(index) {
+    return $Call.ByID(3726821172, index);
 }
 
 /**

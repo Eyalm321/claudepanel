@@ -1,6 +1,7 @@
 // Stations panel for the settings popup. Ported from the old inline bar editor
-// (main.js). A station has a NAME, an ordered list of video/playlist URLs, and
-// a SHUFFLE flag. URLs are validated server-side via ParseStationItem on save.
+// (main.js). A station has a NAME and an ordered list of video/playlist URLs.
+// URLs are validated server-side via ParseStationItem on save. (Shuffle is no
+// longer a per-station setting — it's the bar's one-shot shuffle button.)
 import { GetConfig, SaveConfig, ParseStationItem } from '../../bindings/claudepanel/app.js';
 
 export default {
@@ -36,10 +37,6 @@ export default {
               <button id="st-url-add" class="editor-btn" title="Add another video or playlist URL">+ URL</button>
             </div>
           </div>
-          <label class="panel-row">
-            <span class="panel-label">SHUFFLE</span>
-            <input type="checkbox" id="st-shuffle" class="panel-check">
-          </label>
           <div class="panel-actions">
             <button id="st-save" class="editor-btn editor-btn--accent">SAVE</button>
             <button id="st-cancel" class="editor-btn">CANCEL</button>
@@ -111,11 +108,9 @@ export default {
       listEl.style.display = 'none';
       formEl.style.display = 'flex';
       const nameI = $('#st-name');
-      const shuffleI = $('#st-shuffle');
       urlsEl.innerHTML = '';
       if (mode === 'add') {
         nameI.value = '';
-        shuffleI.checked = false;
         addUrlInput('');
       } else {
         const idx = selectedIdx();
@@ -123,7 +118,6 @@ export default {
         if (idx >= 0 && idx < list.length) {
           const st = list[idx];
           nameI.value = st.name || '';
-          shuffleI.checked = !!st.shuffle;
           const items = st.items || [];
           if (items.length === 0) addUrlInput('');
           else items.forEach((it) => addUrlInput(it.raw || it.id || ''));
@@ -146,13 +140,16 @@ export default {
           return;
         }
       }
-      const shuffle = $('#st-shuffle').checked;
       const list = config.stations || [];
       if (formMode === 'add') {
-        list.push({ name, items, shuffle });
+        // Shuffle is toggled from the bar, not here — new stations start off.
+        list.push({ name, items, shuffle: false });
       } else {
         const idx = selectedIdx();
-        if (idx >= 0 && idx < list.length) list[idx] = { name, items, shuffle };
+        // Preserve the bar-driven shuffle flag across detail edits.
+        if (idx >= 0 && idx < list.length) {
+          list[idx] = { name, items, shuffle: !!list[idx].shuffle };
+        }
       }
       config.stations = list;
       try {

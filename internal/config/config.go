@@ -45,7 +45,9 @@ type StationItem struct {
 }
 
 // StationConfig is a named, ordered collection of YouTube items played as a
-// radio station, with a per-station shuffle toggle.
+// radio station, with a per-station shuffle toggle. Shuffle is driven from the
+// bar's shuffle button (not the settings editor) and persisted here so the
+// on/off state survives restarts.
 type StationConfig struct {
 	Name    string        `json:"name"`
 	Items   []StationItem `json:"items"`

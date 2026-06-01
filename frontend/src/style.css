@@ -122,6 +122,12 @@ html, body {
   font-size: 9px;
 }
 .arrow:hover { color: var(--clay); }
+/* Grayed-out arrow (e.g. track ‹ › on a single-track or livestream station):
+   dimmed, no hover accent, default cursor. Clicks are ignored in JS, not via
+   pointer-events, so a stray click falls through harmlessly instead of toggling
+   play/pause. */
+.arrow.is-disabled,
+.arrow.is-disabled:hover { color: var(--text-muted); opacity: 0.3; cursor: default; }
 
 /* ── Pin / Unpin toggle ── */
 #seg-pin { cursor: pointer; padding: 0 4px; }
@@ -411,16 +417,63 @@ html, body {
   50% { opacity: 1; color: var(--green); }
 }
 
+/* Play/pause + shuffle icon buttons (replace the old [ON]/[OFF] text). */
+.radio-btn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.1s ease;
+}
+.radio-btn:hover { color: var(--clay); }
+.radio-ico {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+  display: none;
+}
+/* Default (paused/off/idle/loading): show the play triangle. */
+#radio-status .ico-play  { display: inline-block; }
+#radio-status .ico-pause { display: none; }
+/* Playing: swap to the pause bars and pulse green like the old soundwave. */
+#radio-status.playing .ico-play  { display: none; }
+#radio-status.playing .ico-pause { display: inline-block; }
 #radio-status.playing {
   animation: soundwave 1.5s ease infinite;
   color: var(--green) !important;
-  opacity: 1 !important;
-  font-weight: bold;
 }
+/* Loading: pulse the play icon in clay so a click gives immediate feedback
+   while the stream resolves (replaces the old [LOAD] text). */
 #radio-status.loading {
   color: var(--clay) !important;
-  font-weight: bold;
+  animation: radio-pulse 0.8s ease-in-out infinite;
 }
+@keyframes radio-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+#radio-status.err { color: var(--red) !important; }
+
+/* Shuffle uses a stroke icon (two crossing arrows) rather than a filled glyph
+   like play/pause — outlined paths still read as "shuffle" at this tiny size,
+   where a filled glyph collapses into a blob. The blanket .radio-ico rule above
+   hides it and fills it, so re-show it and flip fill→stroke here. */
+#btn-radio-shuffle .radio-ico {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Shuffle: gray when off, white when the mode is on (it's just a mode toggle, so
+   keep it neutral — no clay accent, and override the shared clay hover). */
+#btn-radio-shuffle.on { color: var(--text); }
+#btn-radio-shuffle:hover { color: var(--text); }
 
 /* ── Terminal launcher cycler ── */
 /* The dot shows the entry's exact configured hex (set via inline style on the

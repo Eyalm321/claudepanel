@@ -34,7 +34,8 @@ var (
 // common form — with or without scheme/host (https://, https://www., www.,
 // youtube.com/…) and bare IDs:
 //
-//   - watch?v=X[&list=Y]                              → video X (list ignored)
+//   - watch?v=X&list=Y                                → playlist Y (playlist wins)
+//   - watch?v=X                                       → video X
 //   - youtu.be/X, /shorts/X, /embed/X, /v/X, /live/X  → video X
 //   - playlist?list=Y, watch?list=Y, …&list=Y         → playlist Y
 //   - bare 11-char ID                                 → video
@@ -48,11 +49,11 @@ func ParseItem(input string) (config.StationItem, error) {
 		return config.StationItem{}, fmt.Errorf("empty input")
 	}
 
-	if m := videoRefRe.FindStringSubmatch(raw); m != nil {
-		return config.StationItem{Kind: config.ItemVideo, ID: m[1], Raw: raw}, nil
-	}
 	if m := listRe.FindStringSubmatch(raw); m != nil {
 		return config.StationItem{Kind: config.ItemPlaylist, ID: m[1], Raw: raw}, nil
+	}
+	if m := videoRefRe.FindStringSubmatch(raw); m != nil {
+		return config.StationItem{Kind: config.ItemVideo, ID: m[1], Raw: raw}, nil
 	}
 	if bareVideoRe.MatchString(raw) {
 		return config.StationItem{Kind: config.ItemVideo, ID: raw, Raw: raw}, nil
@@ -61,4 +62,27 @@ func ParseItem(input string) (config.StationItem, error) {
 		return config.StationItem{Kind: config.ItemPlaylist, ID: raw, Raw: raw}, nil
 	}
 	return config.StationItem{}, fmt.Errorf("unrecognized YouTube URL or ID: %q", raw)
+}
+
+// HasMultipleTracks reports whether a station can ever have more than one track
+// to step through — i.e. it has two or more items, or its single item is a
+// playlist (which expands to many tracks). It re-parses each item's Raw exactly
+// as buildAndStart does, so a watch?v=…&list=… saved with a stale "video" kind is
+// still recognised as a playlist. It never touches the network (no playlist
+// expansion), so it's safe to call for stations that have never played — making
+// it the authoritative source for whether the bar's track-skip buttons apply.
+func HasMultipleTracks(st config.StationConfig) bool {
+	if len(st.Items) >= 2 {
+		return true
+	}
+	if len(st.Items) != 1 {
+		return false
+	}
+	it := st.Items[0]
+	if it.Raw != "" {
+		if parsed, err := ParseItem(it.Raw); err == nil {
+			it = parsed
+		}
+	}
+	return it.Kind == config.ItemPlaylist
 }

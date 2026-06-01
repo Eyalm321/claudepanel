@@ -44,13 +44,13 @@ func (a radioResolverAdapter) Resolve(ctx context.Context, videoID string, force
 var Version = "dev"
 
 type App struct {
-	app       *application.App
-	window    *application.WebviewWindow
-	cfg       *config.Config
-	monitors  []platform.MonitorInfo
-	hwnd      uintptr
-	trayMgr   *tray.Manager
-	radio     *radio.Resolver
+	app      *application.App
+	window   *application.WebviewWindow
+	cfg      *config.Config
+	monitors []platform.MonitorInfo
+	hwnd     uintptr
+	trayMgr  *tray.Manager
+	radio    *radio.Resolver
 
 	// audioCtrl/station are the radio "resource dependency": the native audio
 	// engine (a background player process) and the queue that drives it. They
@@ -70,9 +70,9 @@ type App struct {
 	// menuWindow is the small dropdown anchored under the brand icon
 	// (Check for updates / Exit). Created lazily, hidden (not destroyed) on
 	// close, and auto-hidden when it loses focus.
-	menuWindow   *application.WebviewWindow
-	menuVisible  bool      // tracks whether the dropdown is currently shown
-	menuShownAt  time.Time // guards the focus-loss auto-hide against a spurious
+	menuWindow  *application.WebviewWindow
+	menuVisible bool      // tracks whether the dropdown is currently shown
+	menuShownAt time.Time // guards the focus-loss auto-hide against a spurious
 	//                        WindowLostFocus during the show/focus transition
 	menuHiddenAt time.Time // when it was last hidden, so a toggle click can tell
 	//                        a self-inflicted auto-hide from a fresh open request
@@ -882,6 +882,61 @@ func (a *App) RadioPause() error {
 		return fmt.Errorf("radio is disabled")
 	}
 	return st.Pause()
+}
+
+// RadioNext skips to the next track in the active station's queue. It's a no-op
+// when the radio is disabled or nothing has been queued yet (e.g. never played).
+// The bar's › track button drives this; it's grayed out for single-track and
+// livestream stations where there's nothing to step through.
+func (a *App) RadioNext() error {
+	st := a.getStation()
+	if st == nil {
+		return fmt.Errorf("radio is disabled")
+	}
+	return st.Next()
+}
+
+// RadioPrev steps back to the previous track in the active station's queue. It's
+// a no-op when the radio is disabled or nothing has been queued yet. The bar's ‹
+// track button drives this.
+func (a *App) RadioPrev() error {
+	st := a.getStation()
+	if st == nil {
+		return fmt.Errorf("radio is disabled")
+	}
+	return st.Prev()
+}
+
+// RadioStationHasTracks reports whether the station at index has more than one
+// track to step through, so the bar can enable/gray-out its ‹ › track buttons.
+// It's derived from config alone (no playback or network) and recognises
+// playlists even when an item's saved kind is a stale "video" hint — e.g. a
+// watch?v=…&list=… URL. Out-of-range indexes return false.
+func (a *App) RadioStationHasTracks(index int) bool {
+	if index < 0 || index >= len(a.cfg.Stations) {
+		return false
+	}
+	return station.HasMultipleTracks(a.cfg.Stations[index])
+}
+
+// RadioSetShuffle toggles shuffle mode for the station at index, persists it to
+// config, and applies it live to the station engine. It is a pure mode toggle:
+// it changes only the random-order setting and never starts or jumps playback,
+// so toggling while paused stays paused. The bar's shuffle button drives this
+// (the setting was removed from the stations editor).
+func (a *App) RadioSetShuffle(index int, on bool) error {
+	if index < 0 || index >= len(a.cfg.Stations) {
+		return fmt.Errorf("station index %d out of range", index)
+	}
+	a.cfg.Stations[index].Shuffle = on
+	if err := config.Save(a.cfg); err != nil {
+		return err
+	}
+	if st := a.getStation(); st != nil {
+		st.SetStations(a.cfg.Stations)
+		return st.SetShuffle(index, on)
+	}
+	return nil
 }
 
 func (a *App) RadioSetVolume(v float64) error {

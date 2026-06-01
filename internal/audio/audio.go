@@ -28,6 +28,9 @@ type Event struct {
 
 type Player interface {
 	Play(url string) error
+	// Resume continues the currently-loaded track from its paused position
+	// (distinct from Play, which loads a source and starts from the beginning).
+	Resume() error
 	Pause() error
 	Stop() error
 	SetVolume(v float64) error // 0..1

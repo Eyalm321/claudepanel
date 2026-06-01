@@ -3,7 +3,8 @@ import {
   GetBarData, GetConfig, SetActiveAccount,
   GetMonitors, SetMonitor, ToggleClickThrough, GetVersion,
   SaveConfig, SetPinned,
-  RadioPlayStation, RadioPause, RadioSetVolume, SetActiveStation,
+  RadioPlayStation, RadioPause, RadioSetVolume, RadioSetShuffle, SetActiveStation,
+  RadioNext, RadioPrev, RadioStationHasTracks,
   OpenTerminal, OpenTerminalPrompt, ToggleBrandMenu
 } from '../bindings/claudepanel/app.js';
 import { Events } from '@wailsio/runtime';
@@ -391,6 +392,30 @@ function applyStationsUI() {
   if (prev) prev.style.display = show;
   if (next) next.style.display = show;
   if (!isRadioPlaying) setRadioStatus('off');
+  updateShuffleUI();
+  updateTrackNavUI();
+}
+
+// Whether the active station can be stepped track-by-track. The backend is
+// authoritative (it re-parses each item the way the player does, so a
+// watch?v=…&list=… playlist saved with a stale "video" kind is still recognised);
+// we cache the result so the ‹ › click guards stay synchronous.
+let trackNavActive = false;
+
+// Gray out the ‹ › track buttons when the station has nothing to skip to (a single
+// video, a single livestream, or an empty station). Re-queries the backend; safe
+// to fire-and-forget from synchronous callers.
+async function updateTrackNavUI() {
+  let on = false;
+  if (stations.length) {
+    try { on = await RadioStationHasTracks(activeStationIdx); }
+    catch (e) { console.error('RadioStationHasTracks failed:', e); }
+  }
+  trackNavActive = on;
+  for (const id of ['btn-radio-track-prev', 'btn-radio-track-next']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-disabled', !on);
+  }
 }
 
 function updateVolumeUI() {
@@ -417,22 +442,34 @@ async function cycleVolume() {
   await setVolume(nextVol);
 }
 
+// Reflect the active station's shuffle mode on the bar's shuffle icon (clay when
+// on, dimmed when off). Called whenever the station or its state changes.
+function updateShuffleUI() {
+  const el = document.getElementById('btn-radio-shuffle');
+  if (!el) return;
+  const on = !!activeStation().shuffle;
+  el.classList.toggle('on', on);
+  el.title = on ? 'Shuffle: on (click to turn off)' : 'Shuffle: off (click to shuffle)';
+}
+
 function setRadioStatus(state) {
   const statusEl = document.getElementById('radio-status');
   const titleEl  = document.getElementById('radio-title');
   if (!statusEl) return;
   const stationName = activeStation().name;
+  // Drive the play/pause icon + color via state classes (no more [ON]/[OFF] text).
+  statusEl.classList.remove('playing', 'loading', 'err');
   switch (state) {
     case 'load':
       isRadioPlaying = false;
-      statusEl.textContent = '[LOAD]';
-      statusEl.className = 'val loading';
+      statusEl.classList.add('loading');
+      statusEl.title = 'Loading…';
       if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
     case 'on':
       isRadioPlaying = true;
-      statusEl.textContent = '[ON]';
-      statusEl.className = 'val playing';
+      statusEl.classList.add('playing');
+      statusEl.title = 'Pause';
       if (titleEl) {
         titleEl.textContent = `NOW PLAYING ${stationName} · NOW PLAYING ${stationName} · `;
         titleEl.classList.add('marquee');
@@ -440,17 +477,17 @@ function setRadioStatus(state) {
       break;
     case 'off':
       isRadioPlaying = false;
-      statusEl.textContent = '[OFF]';
-      statusEl.className = 'val';
+      statusEl.title = 'Play';
       if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
     case 'err':
       isRadioPlaying = false;
-      statusEl.textContent = '[ERR]';
-      statusEl.className = 'val';
+      statusEl.classList.add('err');
+      statusEl.title = 'Error — click to retry';
       if (titleEl) { titleEl.textContent = stationName; titleEl.classList.remove('marquee'); }
       break;
   }
+  updateShuffleUI();
 }
 
 // Receive and handle state from native player
@@ -501,11 +538,44 @@ async function toggleRadio() {
   }
 }
 
+// Toggle shuffle mode for the active station. Optimistically flips the local flag
+// (so the icon responds instantly) and asks Go to persist + apply it. This is a
+// pure mode toggle: it never starts playback, so toggling while paused stays
+// paused — it only randomizes future auto-advance. Reverts the icon if the call
+// fails.
+async function toggleShuffle() {
+  if (!stations.length) return;
+  const st = activeStation();
+  const next = !st.shuffle;
+  st.shuffle = next;
+  updateShuffleUI();
+  try {
+    await RadioSetShuffle(activeStationIdx, next);
+  } catch (e) {
+    console.error('RadioSetShuffle failed:', e);
+    st.shuffle = !next;
+    updateShuffleUI();
+  }
+}
+
+// Skip to the next/previous track within the active station. Guarded by
+// trackNavActive so a click on a grayed-out arrow is a no-op (the buttons keep
+// pointer events for layout, so we ignore the click here rather than via CSS).
+async function trackNext() {
+  if (!trackNavActive) return;
+  try { await RadioNext(); } catch (e) { console.error('RadioNext failed:', e); }
+}
+async function trackPrev() {
+  if (!trackNavActive) return;
+  try { await RadioPrev(); } catch (e) { console.error('RadioPrev failed:', e); }
+}
+
 async function cycleStation(dir) {
   if (stations.length < 2) return;
   const wasPlaying = isRadioPlaying;
   activeStationIdx = (activeStationIdx + dir + stations.length) % stations.length;
   try { await SetActiveStation(activeStationIdx); } catch (e) { /* non-fatal */ }
+  updateTrackNavUI(); // the new station may differ in skippability
 
   if (wasPlaying) {
     try {
@@ -524,6 +594,9 @@ const radioSeg = document.getElementById('seg-radio');
 radioSeg.addEventListener('click', async (e) => {
   if (e.target.id === 'btn-radio-prev') { await cycleStation(-1); return; }
   if (e.target.id === 'btn-radio-next') { await cycleStation(+1); return; }
+  if (e.target.id === 'btn-radio-track-prev') { await trackPrev(); return; }
+  if (e.target.id === 'btn-radio-track-next') { await trackNext(); return; }
+  if (e.target.closest('#btn-radio-shuffle')) { await toggleShuffle(); return; }
   if (e.target.id === 'radio-vol' || e.target.id === 'radio-vol-lbl') {
     await cycleVolume();
     return;
